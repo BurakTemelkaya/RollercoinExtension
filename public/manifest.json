@@ -39,7 +39,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/*", "content/inject.js"],
+      "resources": ["icons/*"],
       "matches": ["https://rollercoin.com/*", "https://*.rollercoin.com/*"]
     }
   ]

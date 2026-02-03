@@ -90,6 +90,40 @@ export interface LeagueData {
   timestamp: number;
   leagueId?: string;
   currentMiningCurrency?: string;  // Currency user is currently mining
+  currenciesConfig?: CurrencyConfig[];  // Currency withdrawal configs
+  userBalances?: UserBalances;     // User's current balances from WebSocket
+}
+
+// Currency config from wallet API (for minimum withdrawal amounts)
+export interface CurrencyConfig {
+  code: string;           // e.g., "btc", "eth"
+  name: string;           // e.g., "BTC", "ETH"
+  to_small: number;       // Divisor for coin's normal decimals
+  precision_to_balance: number;  // Precision used for balance storage (e.g., 10 for BTC means 10^10)
+  balance_key: string;    // Key to use for balance lookup
+  display_name: string;   // e.g., "BTC", "POL"
+  min: number;            // Minimum withdrawal amount
+  is_can_be_mined: boolean;
+  disabled_withdraw: boolean;
+}
+
+// User balance data from WebSocket
+export type UserBalances = Record<string, string>;
+
+// Withdrawal time calculation result
+export interface WithdrawTimeResult {
+  currency: string;
+  displayName: string;
+  minWithdraw: number;
+  currentBalance: number;    // Current user balance
+  remainingToEarn: number;   // How much more needs to be earned
+  earningPerDay: number;
+  daysFromZero: number;      // Days to reach min if starting from 0
+  daysToWithdraw: number;    // Days to reach min from current balance
+  hoursToWithdraw: number;
+  canWithdraw: boolean;      // Is withdrawal enabled for this currency
+  isMining: boolean;         // Is user currently mining this
+  canWithdrawNow: boolean;   // Already has enough balance to withdraw
 }
 
 // Extension settings
@@ -98,11 +132,15 @@ export interface ExtensionSettings {
   defaultPeriod: Period;
 }
 
+// User custom min withdraw settings
+export type MinWithdrawSettings = Record<string, number>;
+
 // Chrome message types
 export interface MessageRequest {
-  type: 'GET_ROLLERCOIN_DATA' | 'GET_STORED_DATA' | 'ROLLERCOIN_DATA_UPDATE' | 'GET_LEAGUE_DATA' | 'LEAGUE_DATA_UPDATE' | 'FETCH_LEAGUE_DATA' | 'PING';
+  type: 'GET_ROLLERCOIN_DATA' | 'GET_STORED_DATA' | 'ROLLERCOIN_DATA_UPDATE' | 'GET_LEAGUE_DATA' | 'LEAGUE_DATA_UPDATE' | 'FETCH_LEAGUE_DATA' | 'SET_API_MODE' | 'GET_API_MODE' | 'PING';
   data?: RollercoinData;
   leagueData?: LeagueData;
+  enabled?: boolean;
 }
 
 export interface MessageResponse {

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Period, FiatCurrency, PriceData, LeagueData } from '../types';
+import { Period, FiatCurrency, PriceData, LeagueData, MinWithdrawSettings as MinWithdrawSettingsType } from '../types';
 import { fetchPrices, SUPPORTED_FIATS } from '../services/binanceApi';
 import CurrencySelect from './components/CurrencySelect';
 import PeriodTabs from './components/PeriodTabs';
 import ComparisonTable from './components/ComparisonTable';
+import WithdrawTimeTable from './components/WithdrawTimeTable';
+import { loadMinWithdrawSettings, DEFAULT_MIN_WITHDRAW } from './components/MinWithdrawSettings';
 import { Language, t, SUPPORTED_LANGUAGES } from '../i18n/translations';
 
 const App: React.FC = () => {
@@ -15,17 +17,25 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isOnGamePage, setIsOnGamePage] = useState(false);
   const [leagueLoading, setLeagueLoading] = useState(false);
+  const [minWithdrawSettings, setMinWithdrawSettings] = useState<MinWithdrawSettingsType>(DEFAULT_MIN_WITHDRAW);
 
   // Load language preference and data on mount
   useEffect(() => {
-    chrome.storage.local.get('rollercoin_language').then((result) => {
+    chrome.storage.local.get(['rollercoin_language']).then((result) => {
       if (result.rollercoin_language) {
         setLanguage(result.rollercoin_language);
       }
     });
+    loadMinWithdrawSettings().then(setMinWithdrawSettings);
     loadData();
   }, []);
+
+  // Reload settings when changed
+  const handleSettingsChange = () => {
+    loadMinWithdrawSettings().then(setMinWithdrawSettings);
+  };
 
   // Save language preference when changed
   const handleLanguageChange = (newLang: Language) => {
@@ -64,22 +74,30 @@ const App: React.FC = () => {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const activeTab = tabs[0];
 
+      // Check if on rollercoin.com/game page specifically
+      const isOnGame = activeTab?.url?.includes('rollercoin.com/game') ?? false;
+      setIsOnGamePage(isOnGame);
+
       if (activeTab?.url?.includes('rollercoin.com')) {
         setIsConnected(true);
         
-        try {
-          // Request league data from content script
-          const leagueResponse = await chrome.tabs.sendMessage(activeTab.id!, { type: 'GET_LEAGUE_DATA' });
-          if (leagueResponse?.success && leagueResponse.data) {
-            setLeagueData(leagueResponse.data);
-            await fetchPricesForCurrencies(leagueResponse.data);
-            gotLeagueData = true;
+        // Only try to get fresh data if on /game page
+        if (isOnGame) {
+          try {
+            // Request league data from content script
+            const leagueResponse = await chrome.tabs.sendMessage(activeTab.id!, { type: 'GET_LEAGUE_DATA' });
+            if (leagueResponse?.success && leagueResponse.data) {
+              setLeagueData(leagueResponse.data);
+              await fetchPricesForCurrencies(leagueResponse.data);
+              gotLeagueData = true;
+            }
+          } catch (e) {
+            console.log('Content script not responding:', e);
           }
-        } catch (e) {
-          console.log('Content script not responding:', e);
         }
       } else {
         setIsConnected(false);
+        setIsOnGamePage(false);
       }
       
       if (!gotLeagueData) {
@@ -207,12 +225,26 @@ const App: React.FC = () => {
               <option key={lang.code} value={lang.code}>{lang.flag}</option>
             ))}
           </select>
-          <div className={`status-badge ${isConnected ? 'connected' : 'disconnected'}`}>
+          <div className={`status-badge ${isOnGamePage ? 'connected' : isConnected ? 'warning' : 'disconnected'}`}>
             <span className="status-dot"></span>
-            {isConnected ? t('connected', language) : t('offline', language)}
+            {isOnGamePage ? t('connected', language) : isConnected ? t('cachedData', language) : t('offline', language)}
           </div>
         </div>
       </header>
+
+      {/* Not on game page warning */}
+      {!isOnGamePage && leagueData && (
+        <div className="game-page-warning">
+          <span className="warning-icon">⚠️</span>
+          <span className="warning-text">{t('notOnGamePage', language)}</span>
+          <button 
+            className="go-to-game-btn"
+            onClick={() => chrome.tabs.create({ url: 'https://rollercoin.com/game' })}
+          >
+            {t('goToGamePage', language)}
+          </button>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="controls">
@@ -247,6 +279,14 @@ const App: React.FC = () => {
         )}
       </div>
 
+      {/* Dropdown Warning - Show if not enough currencies extracted */}
+      {leagueData.currencies.length <= 1 && isConnected && (
+        <div className="dropdown-warning">
+          <span className="warning-icon">⚠️</span>
+          <span>{t('dropdownNotOpen', language)}</span>
+        </div>
+      )}
+
       {/* Comparison Table - Shows ALL coins from League API */}
       <ComparisonTable
         leagueData={leagueData.currencies}
@@ -257,6 +297,21 @@ const App: React.FC = () => {
         currentMiningCurrency={currentMiningCurrency}
         language={language}
       />
+
+      {/* Withdraw Time Table - Shows time to reach minimum withdrawal */}
+      {leagueData.currenciesConfig && leagueData.currenciesConfig.length > 0 && (
+        <WithdrawTimeTable
+          leagueData={leagueData.currencies}
+          currenciesConfig={leagueData.currenciesConfig}
+          userPower={userPowerBase}
+          userBalances={leagueData.userBalances}
+          language={language}
+          minWithdrawSettings={minWithdrawSettings}
+          onSettingsChange={handleSettingsChange}
+          priceData={priceData}
+          selectedFiat={selectedFiat}
+        />
+      )}
 
       {/* Refresh Button */}
       <button className="refresh-button" onClick={handleRefresh} disabled={leagueLoading}>

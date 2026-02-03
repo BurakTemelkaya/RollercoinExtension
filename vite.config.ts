@@ -56,16 +56,12 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'src/popup/index.html'),
         content: resolve(__dirname, 'src/content/content.ts'),
-        inject: resolve(__dirname, 'src/content/inject.ts'),
         'service-worker': resolve(__dirname, 'src/background/service-worker.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
           if (chunkInfo.name === 'content') {
             return 'content/content.js';
-          }
-          if (chunkInfo.name === 'inject') {
-            return 'content/inject.js';
           }
           if (chunkInfo.name === 'service-worker') {
             return 'background/service-worker.js';

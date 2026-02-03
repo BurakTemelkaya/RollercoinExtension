@@ -58,6 +58,11 @@ body {
   color: #00d964;
 }
 
+.status-badge.warning {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+
 .status-badge.disconnected {
   background: rgba(255, 100, 100, 0.2);
   color: #ff6464;
@@ -73,8 +78,52 @@ body {
   background: #00d964;
 }
 
+.status-badge.warning .status-dot {
+  background: #ffc107;
+}
+
 .status-badge.disconnected .status-dot {
   background: #ff6464;
+}
+
+/* Game Page Warning */
+.game-page-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 10px;
+}
+
+.game-page-warning .warning-icon {
+  font-size: 16px;
+}
+
+.game-page-warning .warning-text {
+  flex: 1;
+  font-size: 12px;
+  color: #ffc107;
+}
+
+.go-to-game-btn {
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  border: none;
+  border-radius: 6px;
+  color: #000;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.go-to-game-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
 }
 
 /* Header Controls */
@@ -85,15 +134,17 @@ body {
 }
 
 .language-select {
-  padding: 5px 8px;
+  padding: 5px 10px;
   background: #1a1a2e;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
-  color: #e8e8e8;
-  font-size: 16px;
+  color: #00d9ff;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
+  text-align: center;
 }
 
 .language-select:hover {
@@ -151,6 +202,58 @@ body {
   border-color: #00d9ff;
 }
 
+/* API Mode Toggle */
+.api-mode-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toggle-text {
+  font-size: 12px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.toggle-switch {
+  width: 36px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-switch.active {
+  background: rgba(0, 217, 255, 0.4);
+}
+
+.toggle-knob {
+  width: 16px;
+  height: 16px;
+  background: #888;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: all 0.2s;
+}
+
+.toggle-switch.active .toggle-knob {
+  left: 18px;
+  background: #00d9ff;
+}
+
 /* Period Tabs */
 .period-tabs {
   display: flex;
@@ -192,6 +295,26 @@ body {
   border: 1px solid rgba(0, 217, 255, 0.2);
   border-radius: 8px;
   margin-bottom: 16px;
+}
+
+/* Dropdown Warning */
+.dropdown-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: #ffc107;
+  line-height: 1.4;
+}
+
+.dropdown-warning .warning-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .power-label {
@@ -646,4 +769,518 @@ body {
 .view-toggle button.active {
   background: #00d9ff;
   color: #1a1a2e;
+}
+
+/* Withdraw Time Section */
+.withdraw-time-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.withdraw-time-section .section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #00d9ff;
+  margin-bottom: 12px;
+}
+
+.withdraw-time-section .section-title.with-settings {
+  justify-content: space-between;
+}
+
+.withdraw-time-section .section-title-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 6px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.section-settings-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #00d9ff;
+}
+
+.section-settings-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.withdraw-time-section .section-icon {
+  font-size: 16px;
+}
+
+.withdraw-table {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.withdraw-header {
+  display: flex;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.withdraw-row {
+  display: flex;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.2s;
+}
+
+.withdraw-row:last-child {
+  border-bottom: none;
+}
+
+.withdraw-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.withdraw-row.disabled {
+  opacity: 0.5;
+}
+
+.withdraw-row.mining {
+  background: rgba(0, 217, 255, 0.1);
+  border-left: 3px solid #00d9ff;
+}
+
+.withdraw-row.mining:hover {
+  background: rgba(0, 217, 255, 0.15);
+}
+
+.withdraw-row.mining .coin-name {
+  color: #00d9ff;
+}
+
+.withdraw-row.fastest {
+  background: rgba(0, 217, 100, 0.08);
+}
+
+.withdraw-row.fastest:hover {
+  background: rgba(0, 217, 100, 0.12);
+}
+
+.withdraw-col {
+  display: flex;
+  align-items: center;
+}
+
+.withdraw-col.coin-col {
+  flex: 2;
+}
+
+.withdraw-col.min-col {
+  flex: 1;
+  justify-content: center;
+}
+
+.withdraw-col.time-col {
+  flex: 1.5;
+  justify-content: flex-end;
+  cursor: help;
+}
+
+.withdraw-row .coin-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.withdraw-row .coin-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+
+.withdraw-row .coin-name {
+  font-weight: 500;
+  color: #e8e8e8;
+}
+
+.withdraw-row .min-amount {
+  font-size: 13px;
+  color: #aaa;
+  font-family: 'Roboto Mono', monospace;
+}
+
+.withdraw-row .min-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.withdraw-row .min-fiat {
+  font-size: 10px;
+  color: #888;
+}
+
+.withdraw-row .time-value {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+
+.withdraw-row .time-value.highlight {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.withdraw-row .time-value.fast {
+  background: rgba(0, 217, 100, 0.15);
+  color: #00d964;
+}
+
+.withdraw-row .time-value.medium {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+}
+
+.withdraw-row .time-value.slow {
+  background: rgba(255, 100, 100, 0.15);
+  color: #ff6464;
+}
+
+.withdraw-row .withdraw-disabled-text {
+  font-size: 11px;
+  color: #888;
+}
+
+.withdraw-row .not-mining-text {
+  font-size: 11px;
+  color: #888;
+}
+
+.withdraw-row .not-mining-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.withdraw-row .mining-time-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.withdraw-row .remaining-amount {
+  font-size: 10px;
+  color: #ff9800;
+  font-weight: 500;
+}
+
+.withdraw-row .badge {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.withdraw-row .fastest-badge {
+  background: rgba(0, 217, 100, 0.2);
+  color: #00d964;
+}
+
+.withdraw-row .ready-badge {
+  background: rgba(76, 175, 80, 0.25);
+  color: #4caf50;
+}
+
+.withdraw-row.ready {
+  background: rgba(76, 175, 80, 0.08);
+}
+
+.withdraw-row.ready:hover {
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.withdraw-col.balance-col {
+  flex: 1.5;
+  justify-content: center;
+}
+
+.balance-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 100px;
+}
+
+.balance-amount {
+  font-size: 12px;
+  color: #aaa;
+  font-family: 'Roboto Mono', monospace;
+}
+
+.balance-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.balance-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #00d9ff, #00d964);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.balance-percent {
+  font-size: 10px;
+  color: #888;
+}
+
+.can-withdraw-now {
+  font-weight: 600;
+  font-size: 12px;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.15);
+  padding: 4px 10px;
+  border-radius: 12px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Settings Modal */
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.settings-modal {
+  background: linear-gradient(135deg, #1e2a4a 0%, #1a2040 100%);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.settings-header h3 {
+  font-size: 16px;
+  color: #00d9ff;
+  margin: 0;
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.settings-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.settings-desc {
+  padding: 12px 20px;
+  color: #aaa;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settings-list {
+  padding: 12px 20px;
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.settings-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.settings-item:last-child {
+  border-bottom: none;
+}
+
+.settings-coin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-coin-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.settings-coin-name {
+  font-weight: 600;
+  color: #fff;
+  font-size: 14px;
+}
+
+.settings-input {
+  width: 120px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  text-align: right;
+}
+
+.settings-input:focus {
+  outline: none;
+  border-color: #00d9ff;
+  box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.2);
+}
+
+.settings-input::-webkit-outer-spin-button,
+.settings-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 12px;
+}
+
+.settings-actions-right {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-btn {
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.settings-btn.save {
+  background: linear-gradient(135deg, #00d9ff, #00a8cc);
+  color: #000;
+}
+
+.settings-btn.save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 217, 255, 0.3);
+}
+
+.settings-btn.cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.settings-btn.cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.settings-btn.reset {
+  background: transparent;
+  color: #888;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.settings-btn.reset:hover {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Settings button in controls */
+.settings-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 8px;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #00d9ff;
+}
+
+.settings-button svg {
+  width: 18px;
+  height: 18px;
 }

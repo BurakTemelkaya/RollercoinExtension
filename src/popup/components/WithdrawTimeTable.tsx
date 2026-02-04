@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LeagueCurrencyData, CurrencyConfig, WithdrawTimeResult, UserBalances, MinWithdrawSettings, PriceData, FiatCurrency, BlockRewardSettings } from '../../types';
+import { LeagueCurrencyData, CurrencyConfig, WithdrawTimeResult, UserBalances, MinWithdrawSettings, PriceData, FiatCurrency } from '../../types';
 import { Language, t } from '../../i18n/translations';
 import MinWithdrawSettingsModal from './MinWithdrawSettings';
 
@@ -13,7 +13,6 @@ interface WithdrawTimeTableProps {
   onSettingsChange?: () => void;
   priceData?: PriceData | null;
   selectedFiat: FiatCurrency;
-  blockRewardSettings?: BlockRewardSettings;
 }
 
 // Coin icon URLs from Rollercoin
@@ -83,7 +82,7 @@ function formatCrypto(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) {
     return '0';
   }
-  
+
   if (amount < 0.0001) {
     return amount.toFixed(8);
   } else if (amount < 0.01) {
@@ -107,7 +106,6 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
   onSettingsChange,
   priceData,
   selectedFiat,
-  blockRewardSettings,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
 
@@ -160,9 +158,9 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
     // 2. DOM parsing: already formatted string (e.g., "29.960782" -> 29.96 TRX)
     const balanceKey = config.code;
     const balanceRaw = userBalances?.[balanceKey] || '0';
-    
+
     let currentBalance: number;
-    
+
     // Check if the balance is a decimal string (DOM format) or raw integer (API format)
     if (balanceRaw.includes('.')) {
       // DOM format: already a decimal string like "29.960782"
@@ -184,16 +182,16 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
     const totalBlockPower = Number.isFinite(currency.total_block_power) ? currency.total_block_power : 0;
     const safeUserPower = Number.isFinite(userPower) ? userPower : 0;
     const apiBlockReward = Number.isFinite(currency.block_payout) ? currency.block_payout : 0;
-    
-    // Use user's custom block reward if available, otherwise fall back to API value
-    const blockReward = blockRewardSettings?.[currency.currency] ?? apiBlockReward;
+
+    // Use WS value directly
+    const blockReward = Number.isFinite(apiBlockReward) ? apiBlockReward : 0;
 
     // Power share (user power / league power)
     const powerShare = totalBlockPower > 0 ? (safeUserPower / totalBlockPower) : 0;
-    
+
     // Earning per block
     const earningPerBlock = blockReward * powerShare;
-    
+
     // Earning per day
     const earningPerDay = earningPerBlock * BLOCKS_PER_DAY;
 
@@ -203,10 +201,10 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
     const minWithdraw = minWithdrawSettings?.[displayName] ?? minWithdrawSettings?.[currency.currency] ?? config.min;
     const remainingToWithdraw = Math.max(0, minWithdraw - currentBalance);
     const canWithdrawNow = currentBalance >= minWithdraw;
-    
+
     // Days from zero (sıfırdan kazsan)
     const daysFromZero = earningPerDay > 0 ? minWithdraw / earningPerDay : Infinity;
-    
+
     // Days with current balance (mevcut bakiyeyle devam etsen)
     const daysToWithdraw = canWithdrawNow ? 0 : (earningPerDay > 0 ? remainingToWithdraw / earningPerDay : Infinity);
     const hoursToWithdraw = daysToWithdraw * 24;
@@ -250,24 +248,24 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
           <span className="section-icon">⏱️</span>
           {t('withdrawTime', language)}
         </div>
-        <button 
-          className="section-settings-btn" 
+        <button
+          className="section-settings-btn"
           onClick={() => setShowSettings(true)}
           title={t('settings', language)}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
           </svg>
         </button>
       </h3>
-      
+
       <MinWithdrawSettingsModal
         isOpen={showSettings}
         onClose={handleSettingsClose}
         language={language}
       />
-      
+
       <div className="withdraw-table">
         <div className="withdraw-header">
           <div className="withdraw-col coin-col">{t('coin', language)}</div>
@@ -280,23 +278,23 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
           const iconUrl = COIN_ICONS[result.currency] || COIN_ICONS[result.displayName];
           const isFastest = fastestResult && result.currency === fastestResult.currency;
           const balancePercent = result.minWithdraw > 0 ? Math.min(100, (result.currentBalance / result.minWithdraw) * 100) : 0;
-          
+
           // Tooltip: Sıfırdan kazsan ne kadar sürer
-          const fromZeroTooltip = Number.isFinite(result.daysFromZero) 
+          const fromZeroTooltip = Number.isFinite(result.daysFromZero)
             ? `${t('fromZero', language)}: ${formatDuration(result.daysFromZero, language)}`
             : '';
 
           return (
-            <div 
-              key={result.currency} 
+            <div
+              key={result.currency}
               className={`withdraw-row ${!result.canWithdraw ? 'disabled' : ''} ${result.isMining ? 'mining' : ''} ${isFastest ? 'fastest' : ''} ${result.canWithdrawNow ? 'ready' : ''}`}
             >
               <div className="withdraw-col coin-col">
                 <div className="coin-info">
                   {iconUrl && (
-                    <img 
-                      src={iconUrl} 
-                      alt={result.currency} 
+                    <img
+                      src={iconUrl}
+                      alt={result.currency}
                       className="coin-icon"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                     />
@@ -310,27 +308,27 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
                   )}
                 </div>
               </div>
-              
+
               <div className="withdraw-col balance-col">
                 <div className="balance-info">
                   <span className="balance-amount">{formatCrypto(result.currentBalance)}</span>
                   <div className="balance-progress">
-                    <div 
-                      className="balance-progress-bar" 
+                    <div
+                      className="balance-progress-bar"
                       style={{ width: `${balancePercent}%` }}
                     />
                   </div>
                   <span className="balance-percent">{balancePercent.toFixed(0)}%</span>
                 </div>
               </div>
-              
+
               <div className="withdraw-col min-col">
                 <span className="min-amount">{formatCrypto(result.minWithdraw)}</span>
                 {getFiatValue(result.minWithdraw, result.currency) && (
                   <span className="min-fiat">≈ {getFiatValue(result.minWithdraw, result.currency)}</span>
                 )}
               </div>
-              
+
               {/* Süre - hover'da sıfırdan süreyi göster */}
               <div className="withdraw-col time-col" title={fromZeroTooltip}>
                 {!result.canWithdraw ? (

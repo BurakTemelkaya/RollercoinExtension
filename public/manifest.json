@@ -19,7 +19,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "alarms"
   ],
   "host_permissions": [
     "https://rollercoin.com/*",
@@ -32,15 +33,26 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://rollercoin.com/*", "https://*.rollercoin.com/*"],
-      "js": ["content/content.js"],
+      "matches": [
+        "https://rollercoin.com/*",
+        "https://*.rollercoin.com/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/*"],
-      "matches": ["https://rollercoin.com/*", "https://*.rollercoin.com/*"]
+      "resources": [
+        "icons/*",
+        "content/websocket-interceptor.js"
+      ],
+      "matches": [
+        "https://rollercoin.com/*",
+        "https://*.rollercoin.com/*"
+      ]
     }
   ]
 }

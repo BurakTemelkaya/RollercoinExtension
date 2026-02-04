@@ -67,6 +67,7 @@ export interface PriceData {
 // League API response types
 export interface LeagueCurrencyData {
   currency: string;           // e.g., "SOL_SMALL", "BTC", "RLT"
+  code: string;               // e.g., "sol", "btc", "rlt" (clean code for mapping)
   total_block_power: number;  // League power in base units
   user_power: number;         // User's allocated power
   block_payout: number;       // Block reward in smallest unit

@@ -13,19 +13,19 @@ function extensionPlugin() {
       if (!existsSync(iconsDir)) {
         mkdirSync(iconsDir, { recursive: true });
       }
-      
+
       // Copy manifest
       copyFileSync(
         resolve(__dirname, 'public/manifest.json'),
         resolve(__dirname, 'dist/manifest.json')
       );
-      
+
       // Copy icons
       const iconSvg = resolve(__dirname, 'public/icons/icon.svg');
       if (existsSync(iconSvg)) {
         copyFileSync(iconSvg, resolve(__dirname, 'dist/icons/icon.svg'));
       }
-      
+
       // Move HTML from src/popup to popup and fix paths
       const srcPopupDir = resolve(__dirname, 'dist/src/popup');
       const destPopupDir = resolve(__dirname, 'dist/popup');
@@ -41,7 +41,7 @@ function extensionPlugin() {
         // Remove src folder
         rmSync(resolve(__dirname, 'dist/src'), { recursive: true, force: true });
       }
-      
+
       console.log('Extension files copied to dist/');
     },
   };
@@ -56,12 +56,16 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'src/popup/index.html'),
         content: resolve(__dirname, 'src/content/content.ts'),
+        'websocket-interceptor': resolve(__dirname, 'src/content/websocket-interceptor.ts'),
         'service-worker': resolve(__dirname, 'src/background/service-worker.ts'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
           if (chunkInfo.name === 'content') {
             return 'content/content.js';
+          }
+          if (chunkInfo.name === 'websocket-interceptor') {
+            return 'content/websocket-interceptor.js';
           }
           if (chunkInfo.name === 'service-worker') {
             return 'background/service-worker.js';

@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import { LeagueCurrencyData, Period, FiatCurrency, BlockRewardSettings } from '../../types';
+import React from 'react';
 import { formatFiatAmount } from '../../utils/calculator';
 import { Language, t } from '../../i18n/translations';
-import BlockRewardSettingsModal from './BlockRewardSettings';
+import { LeagueCurrencyData, Period, FiatCurrency } from '../../types';
 
 interface ComparisonTableProps {
   leagueData: LeagueCurrencyData[];
@@ -12,8 +11,6 @@ interface ComparisonTableProps {
   fiatCurrency: FiatCurrency;
   currentMiningCurrency?: string;
   language: Language;
-  blockRewardSettings?: BlockRewardSettings;
-  onBlockRewardSettingsChange?: () => void;
 }
 
 // Coin icon URLs from Rollercoin
@@ -79,17 +76,17 @@ function formatPower(power: number): string {
   if (!Number.isFinite(power) || Number.isNaN(power) || power <= 0) {
     return '0 Gh/s';
   }
-  
+
   // API returns values in Gh, so start from Gh
   const units = ['Gh', 'Th', 'Ph', 'Eh', 'Zh', 'Yh'];
   let unitIndex = 0;
   let value = power;
-  
+
   while (value >= 1000 && unitIndex < units.length - 1) {
     value /= 1000;
     unitIndex++;
   }
-  
+
   return `${value.toFixed(2)} ${units[unitIndex]}/s`;
 }
 
@@ -101,10 +98,10 @@ function formatCrypto(amount: number, _currency: string): string {
   if (amount === null || amount === undefined || !Number.isFinite(amount) || Number.isNaN(amount)) {
     return '0.00';
   }
-  
+
   const absAmount = Math.abs(amount);
   let decimals: number;
-  
+
   if (absAmount === 0) {
     decimals = 2;
   } else if (absAmount < 0.0001) {
@@ -118,10 +115,10 @@ function formatCrypto(amount: number, _currency: string): string {
   } else {
     decimals = 0;
   }
-  
+
   // Ensure decimals is within valid range (0-20) and is an integer
   decimals = Math.floor(Math.min(20, Math.max(0, decimals)));
-  
+
   try {
     return amount.toLocaleString('en-US', {
       minimumFractionDigits: Math.min(2, decimals),
@@ -140,42 +137,32 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
   fiatCurrency,
   currentMiningCurrency,
   language,
-  blockRewardSettings,
-  onBlockRewardSettingsChange,
 }) => {
-  const [showBlockRewardSettings, setShowBlockRewardSettings] = useState(false);
-
-  const handleBlockRewardSettingsClose = () => {
-    setShowBlockRewardSettings(false);
-    onBlockRewardSettingsChange?.();
-  };
-
   // Calculate earnings for all currencies from league data
   const earnings: CoinEarningRow[] = leagueData.map(currency => {
-    // Block reward: use user setting if available, otherwise use API value
-    const apiBlockReward = Number.isFinite(currency.block_payout) ? currency.block_payout : 0;
-    const blockReward = blockRewardSettings?.[currency.currency] ?? apiBlockReward;
+    // Block reward: Use WS provided value
+    const blockReward = Number.isFinite(currency.block_payout) ? currency.block_payout : 0;
     const totalBlockPower = Number.isFinite(currency.total_block_power) ? currency.total_block_power : 0;
     const safeUserPower = Number.isFinite(userPower) ? userPower : 0;
-    
+
     // Calculate power share (user power / league power)
-    const powerShare = totalBlockPower > 0 
-      ? (safeUserPower / totalBlockPower) * 100 
+    const powerShare = totalBlockPower > 0
+      ? (safeUserPower / totalBlockPower) * 100
       : 0;
-    
+
     // Calculate earning per block based on power share
     const earningPerBlock = blockReward * (powerShare / 100);
     const earningPerPeriod = Number.isFinite(earningPerBlock) ? earningPerBlock * BLOCKS_PER_PERIOD[period] : 0;
-    
+
     // Get Binance symbol for price lookup
     const binanceSymbol = CURRENCY_BINANCE_MAP[currency.currency] || currency.currency;
     const price = prices[binanceSymbol] || prices[currency.currency] || 0;
     const rawFiatValue = price && !currency.is_in_game_currency ? earningPerPeriod * price : null;
     const fiatValue = rawFiatValue !== null && Number.isFinite(rawFiatValue) ? rawFiatValue : null;
-    
+
     // Calculate user's power allocation share (how much of user's total power is allocated to this coin)
-    const userPowerShare = safeUserPower > 0 
-      ? (currency.user_power / safeUserPower) * 100 
+    const userPowerShare = safeUserPower > 0
+      ? (currency.user_power / safeUserPower) * 100
       : 0;
 
     return {
@@ -214,23 +201,23 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
 
   const renderRow = (earning: CoinEarningRow, showShare: boolean) => {
     const isBest = !earning.isGameToken && bestCrypto?.currency === earning.currency;
-    const isCurrent = earning.userPowerAllocated > 0 || 
-                      earning.displayCurrency === currentMiningCurrency ||
-                      earning.currency === currentMiningCurrency;
-    
+    const isCurrent = earning.userPowerAllocated > 0 ||
+      earning.displayCurrency === currentMiningCurrency ||
+      earning.currency === currentMiningCurrency;
+
     const noMining = earning.leaguePower === 0;
-    
+
     let rowClass = '';
     if (isBest && !isCurrent) rowClass = 'best-earning';
     if (isCurrent) rowClass = 'current-mining';
     if (noMining) rowClass = 'no-mining';
-    
+
     return (
       <tr key={earning.currency} className={rowClass}>
         <td>
           <div className="coin-cell">
-            <img 
-              src={COIN_ICONS[earning.currency] || COIN_ICONS[earning.displayCurrency] || ''} 
+            <img
+              src={COIN_ICONS[earning.currency] || COIN_ICONS[earning.displayCurrency] || ''}
               alt={earning.displayCurrency}
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
             />
@@ -240,7 +227,7 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
           </div>
         </td>
         <td className="league-power">
-          {earning.leaguePower > 0 ? earning.leaguePowerFormatted : <span style={{opacity: 0.5}}>-</span>}
+          {earning.leaguePower > 0 ? earning.leaguePowerFormatted : <span style={{ opacity: 0.5 }}>-</span>}
         </td>
         <td>
           {earning.leaguePower > 0 ? (
@@ -255,14 +242,14 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
               )}
             </>
           ) : (
-            <span style={{opacity: 0.5, fontSize: '12px'}}>{t('noMining', language)}</span>
+            <span style={{ opacity: 0.5, fontSize: '12px' }}>{t('noMining', language)}</span>
           )}
         </td>
         {showShare && (
           <td>
-            {earning.userPowerAllocated > 0 && earning.userPowerShare > 0 
-              ? `${earning.userPowerShare.toFixed(1)}%` 
-              : <span style={{opacity: 0.5}}>-</span>}
+            {earning.userPowerAllocated > 0 && earning.userPowerShare > 0
+              ? `${earning.userPowerShare.toFixed(1)}%`
+              : <span style={{ opacity: 0.5 }}>-</span>}
           </td>
         )}
       </tr>
@@ -302,28 +289,12 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
         <div className="section-title with-settings">
           <div className="section-title-left">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
             </svg>
             {t('cryptoComparison', language)} ({getPeriodLabel()})
           </div>
-          <button 
-            className="section-settings-btn" 
-            onClick={() => setShowBlockRewardSettings(true)}
-            title={t('blockRewardSettings', language)}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
-            </svg>
-          </button>
         </div>
-        
-        <BlockRewardSettingsModal
-          isOpen={showBlockRewardSettings}
-          onClose={handleBlockRewardSettingsClose}
-          language={language}
-        />
-        
+
         <div className="table-container">
           <table className="comparison-table">
             <thead>
@@ -348,20 +319,20 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
         <div className="section">
           <div className="section-title">
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/>
+              <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />
             </svg>
-          {t('gameTokens', language)} ({getPeriodLabel()})
-        </div>
-        <div className="table-container">
-          <table className="comparison-table">
-            <thead>
-              <tr>
-                <th>{t('coin', language)}</th>
-                <th>{t('leaguePower', language)}</th>
-                <th>{t('earning', language)}</th>
-                {showShareColumn && <th>{t('share', language)}</th>}
-              </tr>
-            </thead>
+            {t('gameTokens', language)} ({getPeriodLabel()})
+          </div>
+          <div className="table-container">
+            <table className="comparison-table">
+              <thead>
+                <tr>
+                  <th>{t('coin', language)}</th>
+                  <th>{t('leaguePower', language)}</th>
+                  <th>{t('earning', language)}</th>
+                  {showShareColumn && <th>{t('share', language)}</th>}
+                </tr>
+              </thead>
               <tbody>
                 {gameTokens.map(e => renderRow(e, showShareColumn))}
               </tbody>
@@ -374,3 +345,4 @@ const ComparisonTable: React.FC<ComparisonTableProps> = ({
 };
 
 export default ComparisonTable;
+

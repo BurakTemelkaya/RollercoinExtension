@@ -6,6 +6,8 @@ import { LeagueData, LeagueCurrencyData, CurrencyConfig } from '../types';
 
 // Storage keys
 const LEAGUE_DATA_KEY = 'rollercoin_league_data';
+const BLOCK_REWARD_SETTINGS_KEY = 'rollercoin_block_reward_settings';
+const BLOCK_REWARD_LAST_UPDATE_KEY = 'rollercoin_block_reward_last_update';
 
 // Default currencies config with hardcoded min withdraw values (updated from API 2024)
 const DEFAULT_CURRENCIES_CONFIG: CurrencyConfig[] = [
@@ -22,6 +24,23 @@ const DEFAULT_CURRENCIES_CONFIG: CurrencyConfig[] = [
   { code: 'rst', name: 'RST', display_name: 'RST', min: 100, is_can_be_mined: true, disabled_withdraw: true, to_small: 1000000, precision_to_balance: 6, balance_key: 'RST' },
   { code: 'hmt', name: 'HMT', display_name: 'HMT', min: 500, is_can_be_mined: true, disabled_withdraw: true, to_small: 1000000, precision_to_balance: 6, balance_key: 'HMT' },
 ];
+
+// Default pool power values (from WebSocket pool_power_response, in raw units)
+// These are fallback values when DOM parsing fails
+const DEFAULT_POOL_POWER: Record<string, number> = {
+  'SAT': 2809885774084,        // BTC
+  'ETH_SMALL': 2522035777396,  // ETH
+  'SOL_SMALL': 4151839148373,  // SOL
+  'DOGE_SMALL': 3050815259512, // DOGE
+  'BNB_SMALL': 2163631736963,  // BNB
+  'LTC_SMALL': 928850529645,   // LTC
+  'XRP_SMALL': 1487908313055,  // XRP
+  'TRX_SMALL': 4288895878847,  // TRX
+  'MATIC_SMALL': 1929269880036,// POL
+  'RLT': 2812911677039,        // RLT
+  'RST': 1108675107540,        // RST
+  'HMT': 1454535107323,        // HMT
+};
 
 // Power unit multipliers (to convert to Gh base)
 const POWER_UNITS: Record<string, number> = {
@@ -429,12 +448,46 @@ function extractLeaguePowersFromDOM(): Array<{ currency: string; power: number; 
  */
 function buildLeagueDataFromDOM(): LeagueData | null {
   const userPower = extractUserPowerFromDOM();
-  const leaguePowers = extractLeaguePowersFromDOM();
+  let leaguePowers = extractLeaguePowersFromDOM();
   const userMiningAllocation = extractUserMiningAllocationFromDOM();
   
+  // If no league powers from DOM, use previous stored values or default
   if (leaguePowers.length === 0) {
-    console.log('Rollercoin Calculator: No league data found in DOM');
-    return null;
+    console.log('Rollercoin Calculator: No league data in DOM, trying to use previous stored league powers...');
+    // Try to get previous league data from storage synchronously (not ideal, but safe for fallback)
+    let previousLeaguePowers: Array<{ currency: string; power: number; isGameToken: boolean }> = [];
+    try {
+      const prev = window.localStorage.getItem('rollercoin_league_data');
+      if (prev) {
+        const prevObj = JSON.parse(prev);
+        if (prevObj && Array.isArray(prevObj.currencies)) {
+          previousLeaguePowers = prevObj.currencies.map((c: any) => ({
+            currency: c.currency,
+            power: c.total_block_power,
+            isGameToken: c.is_in_game_currency
+          }));
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    if (previousLeaguePowers.length > 0) {
+      leaguePowers = previousLeaguePowers;
+      console.log('Rollercoin Calculator: Used previous league powers from storage.');
+    } else {
+      // Build from default pool power and currencies config
+      leaguePowers = DEFAULT_CURRENCIES_CONFIG.map(config => {
+        const balanceKey = config.balance_key;
+        const power = DEFAULT_POOL_POWER[balanceKey] || 0;
+        const isGameToken = ['RLT', 'RST', 'HMT'].includes(config.display_name);
+        return {
+          currency: config.display_name,
+          power: power,
+          isGameToken: isGameToken,
+        };
+      });
+      console.log('Rollercoin Calculator: Used default pool power values.');
+    }
   }
   
   console.log('Rollercoin Calculator: User mining allocation:', userMiningAllocation);
@@ -485,6 +538,66 @@ function buildLeagueDataFromDOM(): LeagueData | null {
     userBalances: undefined, // Will be filled by fetchDataFromDOM if possible
     currentMiningCurrency: activeMiningCurrency,
   };
+}
+
+/**
+ * Extract current mining coin's block reward from game page
+ * Looks for: <p class="title">Block <span class="reward-number">10.83</span><span class="satoshi-text">TRX</span></p>
+ */
+function extractCurrentMiningBlockReward(): { currency: string; reward: number } | null {
+  // Find the block reward display
+  const rewardNumberEl = document.querySelector('.reward-number');
+  const satoshiTextEl = document.querySelector('.satoshi-text');
+  
+  if (!rewardNumberEl || !satoshiTextEl) {
+    console.log('Rollercoin Calculator: Block reward elements not found on game page');
+    return null;
+  }
+  
+  const rewardText = rewardNumberEl.textContent?.trim() || '';
+  let currencyText = satoshiTextEl.textContent?.trim().toUpperCase() || '';
+  
+  // Map special cases
+  if (currencyText === 'MATIC') currencyText = 'POL';
+  if (currencyText === 'SATOSHI' || currencyText === 'SAT') currencyText = 'BTC';
+  
+  const reward = parseFloat(rewardText.replace(',', '.'));
+  
+  if (isNaN(reward) || reward <= 0 || !currencyText) {
+    console.log('Rollercoin Calculator: Could not parse block reward');
+    return null;
+  }
+  
+  console.log(`Rollercoin Calculator: Current mining block reward: ${reward} ${currencyText}`);
+  return { currency: currencyText, reward };
+}
+
+/**
+ * Save single block reward to storage (merge with existing)
+ */
+async function saveCurrentMiningBlockReward(): Promise<void> {
+  const currentReward = extractCurrentMiningBlockReward();
+  if (!currentReward) return;
+  
+  try {
+    // Load existing block rewards
+    const result = await chrome.storage.local.get(BLOCK_REWARD_SETTINGS_KEY);
+    const existingRewards = result[BLOCK_REWARD_SETTINGS_KEY] || {};
+    
+    // Merge with current mining coin reward
+    const updatedRewards = {
+      ...existingRewards,
+      [currentReward.currency]: currentReward.reward,
+    };
+    
+    await chrome.storage.local.set({
+      [BLOCK_REWARD_SETTINGS_KEY]: updatedRewards,
+    });
+    
+    console.log(`Rollercoin Calculator: Saved ${currentReward.currency} block reward: ${currentReward.reward}`);
+  } catch (error) {
+    console.error('Rollercoin Calculator: Error saving current mining block reward:', error);
+  }
 }
 
 /**
@@ -557,10 +670,135 @@ async function fetchDataFromDOM(): Promise<LeagueData | null> {
 }
 
 /**
+ * Parse block rewards from league page DOM by clicking each currency
+ * URL: https://rollercoin.com/game/league
+ * Clicks each coin in "My League" card to get block reward values
+ */
+async function parseBlockRewardsFromLeaguePage(): Promise<Record<string, number> | null> {
+  console.log('Rollercoin Calculator: Parsing block rewards from league page by clicking coins...');
+  
+  const blockRewards: Record<string, number> = {};
+  
+  // Find the current league card
+  const currentLeagueCard = document.querySelector('.league-card-wrapper-inner.current-league');
+  
+  if (!currentLeagueCard) {
+    console.log('Rollercoin Calculator: Current league card not found');
+    return null;
+  }
+  
+  // Find all currency buttons in the league card
+  const currencyButtons = currentLeagueCard.querySelectorAll('.league-currency');
+  
+  if (currencyButtons.length === 0) {
+    console.log('Rollercoin Calculator: No currency buttons found in league card');
+    return null;
+  }
+  
+  console.log(`Rollercoin Calculator: Found ${currencyButtons.length} currency buttons`);
+  
+  // Click each currency button and read the block reward
+  for (let i = 0; i < currencyButtons.length; i++) {
+    const button = currencyButtons[i] as HTMLElement;
+    
+    // Get currency name from the img alt attribute
+    const img = button.querySelector('img');
+    if (!img) continue;
+    
+    // Extract currency from src (e.g., "currencies/btc.svg" -> "BTC")
+    const src = img.getAttribute('src') || '';
+    const currencyMatch = src.match(/currencies\/([a-z]+)\.svg/i);
+    if (!currencyMatch) continue;
+    
+    let currencyCode = currencyMatch[1].toUpperCase();
+    // Map special cases
+    if (currencyCode === 'MATIC') currencyCode = 'POL';
+    
+    // Click the button
+    button.click();
+    
+    // Wait for UI to update
+    await new Promise(resolve => setTimeout(resolve, 150));
+    
+    // Read the block reward text
+    const blockRewardEl = currentLeagueCard.querySelector('.block-reward-text');
+    if (blockRewardEl) {
+      const rewardText = blockRewardEl.textContent?.trim() || '';
+      // Parse value like "0.0084 LTC" or "204 RST"
+      const match = rewardText.match(/([\d.,]+)/);
+      if (match) {
+        const numericValue = parseFloat(match[1].replace(',', '.'));
+        if (!isNaN(numericValue) && numericValue > 0) {
+          blockRewards[currencyCode] = numericValue;
+          console.log(`Rollercoin Calculator: ${currencyCode} block reward: ${numericValue}`);
+        }
+      }
+    }
+  }
+  
+  if (Object.keys(blockRewards).length === 0) {
+    console.log('Rollercoin Calculator: No block rewards found');
+    return null;
+  }
+  
+  console.log('Rollercoin Calculator: All block rewards:', blockRewards);
+  return blockRewards;
+}
+
+/**
+ * Save block rewards to storage
+ */
+async function saveBlockRewardsToStorage(rewards: Record<string, number>): Promise<void> {
+  try {
+    await chrome.storage.local.set({
+      [BLOCK_REWARD_SETTINGS_KEY]: rewards,
+      [BLOCK_REWARD_LAST_UPDATE_KEY]: Date.now()
+    });
+    console.log('Rollercoin Calculator: Block rewards saved to storage');
+  } catch (error) {
+    console.error('Rollercoin Calculator: Error saving block rewards:', error);
+  }
+}
+
+/**
+ * Check if on league page and parse block rewards
+ */
+async function handleLeaguePage(): Promise<void> {
+  const isLeaguePage = window.location.pathname.includes('/game/league');
+  
+  if (!isLeaguePage) {
+    return;
+  }
+  
+  console.log('Rollercoin Calculator: On league page, will parse block rewards...');
+  
+  // Wait a bit for page to fully render
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  const blockRewards = await parseBlockRewardsFromLeaguePage();
+  
+  if (blockRewards && Object.keys(blockRewards).length > 0) {
+    await saveBlockRewardsToStorage(blockRewards);
+  }
+}
+
+/**
  * Initialize content script
  */
 async function init() {
   console.log('Rollercoin Calculator: Content script loaded on', window.location.pathname);
+
+  // Check if on league page and parse block rewards
+  await handleLeaguePage();
+
+  // Check if on game page and save current mining coin's block reward
+  const isGamePage = window.location.pathname.includes('/game') && !window.location.pathname.includes('/game/league');
+  if (isGamePage) {
+    // Wait for game page to fully render, then save current mining block reward
+    setTimeout(async () => {
+      await saveCurrentMiningBlockReward();
+    }, 2500);
+  }
 
   // Wait for page to be ready (game page might load dynamically)
   setTimeout(async () => {

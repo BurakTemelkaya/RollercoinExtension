@@ -135,6 +135,9 @@ export interface ExtensionSettings {
 // User custom min withdraw settings
 export type MinWithdrawSettings = Record<string, number>;
 
+// User custom block reward settings (per block rewards by coin)
+export type BlockRewardSettings = Record<string, number>;
+
 // Chrome message types
 export interface MessageRequest {
   type: 'GET_ROLLERCOIN_DATA' | 'GET_STORED_DATA' | 'ROLLERCOIN_DATA_UPDATE' | 'GET_LEAGUE_DATA' | 'LEAGUE_DATA_UPDATE' | 'FETCH_LEAGUE_DATA' | 'SET_API_MODE' | 'GET_API_MODE' | 'PING';

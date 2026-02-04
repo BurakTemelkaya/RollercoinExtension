@@ -66,7 +66,11 @@ export const translations = {
     dropdownNotOpen: 'Lütfen oyun sayfasında güç değerinizin üstüne tıklayarak dropdown\u0027ı açın, sonra Yenile butonuna basın.',
     openDropdownHint: 'Güç dropdown\u0027ını açın',    notOnGamePage: 'Güncel veri almak için oyun sayfasına gidin',
     cachedData: 'Önbellek verisi gösteriliyor',
-    goToGamePage: 'Oyun Sayfasına Git',    
+    goToGamePage: 'Oyun Sayfasına Git',
+    firstTimeSetup: 'İlk Kurulum Gerekli',
+    firstTimeSetupDesc: 'Blok ödüllerini yüklemek için lig sayfasını ziyaret edin. Değerler otomatik olarak kaydedilecek.',
+    partialBlockRewards: '{count}/{total} coin güncellendi',
+    partialBlockRewardsDesc: 'Tüm coinlerin blok ödüllerini görmek için lig sayfasını ziyaret edin.',
     // Fiat currencies
     fiatUSDT: 'USD Tether',
     fiatTRY: 'Türk Lirası',
@@ -83,6 +87,15 @@ export const translations = {
     cancel: 'İptal',
     resetDefaults: 'Varsayılana Sıfırla',
     settingsSaved: 'Ayarlar kaydedildi',
+    
+    // Block Reward Settings
+    blockRewardSettings: 'Blok Ödülleri',
+    blockRewardSettingsTitle: 'Blok Ödüllerini Ayarla',
+    blockRewardSettingsDesc: 'Her coin için blok başına ödül miktarını ayarlayın. Değerler liginize göre farklılık gösterir.',
+    perBlock: 'Blok Başına',
+    goToLeaguePage: 'Lig Sayfasına Git',
+    leaguePageHint: 'Liginizin blok ödüllerini görmek için lig sayfasını ziyaret edin',
+    autoUpdated: 'Lig sayfasından otomatik güncellendi',
   },
   en: {
     // Header
@@ -151,6 +164,10 @@ export const translations = {
     notOnGamePage: 'Go to the game page to get current data',
     cachedData: 'Showing cached data',
     goToGamePage: 'Go to Game Page',
+    firstTimeSetup: 'First-Time Setup Required',
+    firstTimeSetupDesc: 'Visit the league page to load block rewards. Values will be saved automatically.',
+    partialBlockRewards: '{count}/{total} coins updated',
+    partialBlockRewardsDesc: 'Visit the league page to get all coin block rewards.',
     
     // Fiat currencies
     fiatUSDT: 'USD Tether',
@@ -168,6 +185,15 @@ export const translations = {
     cancel: 'Cancel',
     resetDefaults: 'Reset to Defaults',
     settingsSaved: 'Settings saved',
+    
+    // Block Reward Settings
+    blockRewardSettings: 'Block Rewards',
+    blockRewardSettingsTitle: 'Set Block Rewards',
+    blockRewardSettingsDesc: 'Set reward per block for each coin. Values vary by your league.',
+    perBlock: 'Per Block',
+    goToLeaguePage: 'Go to League Page',
+    leaguePageHint: 'Visit the league page to see your league\'s block rewards',
+    autoUpdated: 'Auto-updated from league page',
   },
 };
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LeagueCurrencyData, CurrencyConfig, WithdrawTimeResult, UserBalances, MinWithdrawSettings, PriceData, FiatCurrency } from '../../types';
+import { LeagueCurrencyData, CurrencyConfig, WithdrawTimeResult, UserBalances, MinWithdrawSettings, PriceData, FiatCurrency, BlockRewardSettings } from '../../types';
 import { Language, t } from '../../i18n/translations';
 import MinWithdrawSettingsModal from './MinWithdrawSettings';
 
@@ -13,6 +13,7 @@ interface WithdrawTimeTableProps {
   onSettingsChange?: () => void;
   priceData?: PriceData | null;
   selectedFiat: FiatCurrency;
+  blockRewardSettings?: BlockRewardSettings;
 }
 
 // Coin icon URLs from Rollercoin
@@ -106,6 +107,7 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
   onSettingsChange,
   priceData,
   selectedFiat,
+  blockRewardSettings,
 }) => {
   const [showSettings, setShowSettings] = useState(false);
 
@@ -181,7 +183,10 @@ const WithdrawTimeTable: React.FC<WithdrawTimeTableProps> = ({
     // Calculate daily earning for this currency
     const totalBlockPower = Number.isFinite(currency.total_block_power) ? currency.total_block_power : 0;
     const safeUserPower = Number.isFinite(userPower) ? userPower : 0;
-    const blockReward = Number.isFinite(currency.block_payout) ? currency.block_payout : 0;
+    const apiBlockReward = Number.isFinite(currency.block_payout) ? currency.block_payout : 0;
+    
+    // Use user's custom block reward if available, otherwise fall back to API value
+    const blockReward = blockRewardSettings?.[currency.currency] ?? apiBlockReward;
 
     // Power share (user power / league power)
     const powerShare = totalBlockPower > 0 ? (safeUserPower / totalBlockPower) : 0;

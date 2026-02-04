@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Period, FiatCurrency, PriceData, LeagueData, MinWithdrawSettings as MinWithdrawSettingsType } from '../types';
+import { Period, FiatCurrency, PriceData, LeagueData, MinWithdrawSettings as MinWithdrawSettingsType, BlockRewardSettings as BlockRewardSettingsType } from '../types';
 import { fetchPrices, SUPPORTED_FIATS } from '../services/binanceApi';
 import CurrencySelect from './components/CurrencySelect';
 import PeriodTabs from './components/PeriodTabs';
 import ComparisonTable from './components/ComparisonTable';
 import WithdrawTimeTable from './components/WithdrawTimeTable';
 import { loadMinWithdrawSettings, DEFAULT_MIN_WITHDRAW } from './components/MinWithdrawSettings';
+import { loadBlockRewardSettings, checkBlockRewardStatus, DEFAULT_BLOCK_REWARDS } from './components/BlockRewardSettings';
 import { Language, t, SUPPORTED_LANGUAGES } from '../i18n/translations';
 
 const App: React.FC = () => {
@@ -20,6 +21,8 @@ const App: React.FC = () => {
   const [isOnGamePage, setIsOnGamePage] = useState(false);
   const [leagueLoading, setLeagueLoading] = useState(false);
   const [minWithdrawSettings, setMinWithdrawSettings] = useState<MinWithdrawSettingsType>(DEFAULT_MIN_WITHDRAW);
+  const [blockRewardSettings, setBlockRewardSettings] = useState<BlockRewardSettingsType>(DEFAULT_BLOCK_REWARDS);
+  const [blockRewardStatus, setBlockRewardStatus] = useState<{ updated: number; total: number; missing: string[] } | null>(null);
 
   // Load language preference and data on mount
   useEffect(() => {
@@ -29,12 +32,20 @@ const App: React.FC = () => {
       }
     });
     loadMinWithdrawSettings().then(setMinWithdrawSettings);
+    loadBlockRewardSettings().then(setBlockRewardSettings);
+    checkBlockRewardStatus().then(setBlockRewardStatus);
     loadData();
   }, []);
 
   // Reload settings when changed
   const handleSettingsChange = () => {
     loadMinWithdrawSettings().then(setMinWithdrawSettings);
+  };
+
+  // Reload block reward settings when changed
+  const handleBlockRewardSettingsChange = () => {
+    loadBlockRewardSettings().then(setBlockRewardSettings);
+    checkBlockRewardStatus().then(setBlockRewardStatus);
   };
 
   // Save language preference when changed
@@ -246,6 +257,33 @@ const App: React.FC = () => {
         </div>
       )}
 
+      {/* Block reward status warning - show if some coins are missing */}
+      {blockRewardStatus && blockRewardStatus.updated < blockRewardStatus.total && (
+        <div className={`setup-warning ${blockRewardStatus.updated === 0 ? '' : 'partial'}`}>
+          <span className="setup-icon">{blockRewardStatus.updated === 0 ? '🏆' : '⚠️'}</span>
+          <div className="setup-content">
+            <span className="setup-title">
+              {blockRewardStatus.updated === 0 
+                ? t('firstTimeSetup', language)
+                : t('partialBlockRewards', language).replace('{count}', String(blockRewardStatus.updated)).replace('{total}', String(blockRewardStatus.total))
+              }
+            </span>
+            <span className="setup-text">
+              {blockRewardStatus.updated === 0 
+                ? t('firstTimeSetupDesc', language)
+                : t('partialBlockRewardsDesc', language)
+              }
+            </span>
+          </div>
+          <button 
+            className="setup-btn"
+            onClick={() => chrome.tabs.create({ url: 'https://rollercoin.com/game/league' })}
+          >
+            {t('goToLeaguePage', language)}
+          </button>
+        </div>
+      )}
+
       {/* Controls */}
       <div className="controls">
         <CurrencySelect
@@ -296,6 +334,8 @@ const App: React.FC = () => {
         fiatCurrency={selectedFiat}
         currentMiningCurrency={currentMiningCurrency}
         language={language}
+        blockRewardSettings={blockRewardSettings}
+        onBlockRewardSettingsChange={handleBlockRewardSettingsChange}
       />
 
       {/* Withdraw Time Table - Shows time to reach minimum withdrawal */}
@@ -310,6 +350,7 @@ const App: React.FC = () => {
           onSettingsChange={handleSettingsChange}
           priceData={priceData}
           selectedFiat={selectedFiat}
+          blockRewardSettings={blockRewardSettings}
         />
       )}
 

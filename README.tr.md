@@ -41,7 +41,7 @@ sequenceDiagram
 
 ## Kurulum
 
-1. Projeyi klonlayın: `git clone https://github.com/user/rollercoin-extension`
+1. Projeyi klonlayın: `git clone https://github.com/user/rollercoinextension`
 2. Bağımlılıkları yükleyin: `npm install`
 3. Derleyin: `npm run build`
 4. Chrome'da `chrome://extensions` açın

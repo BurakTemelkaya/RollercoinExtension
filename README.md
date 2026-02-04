@@ -1,4 +1,11 @@
+# RollercoinExtension
+
+[TR (Türkçe)](README.tr.md) | [EN (English)](README.md)
+
+---
+
 # Rollercoin Earnings Calculator
+
 
 [🇹🇷 Türkçe](README.md)
 

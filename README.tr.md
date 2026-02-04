@@ -1,3 +1,9 @@
+# RollercoinExtension
+
+[TR (Türkçe)](README.tr.md) | [EN (English)](README.md)
+
+---
+
 # Rollercoin Kazanç Hesaplayıcı
 
 [🇬🇧 English](README.en.md)

@@ -92,4 +92,58 @@
     (window as any).WebSocket.OPEN = OriginalWebSocket.OPEN;
     (window as any).WebSocket.CLOSING = OriginalWebSocket.CLOSING;
     (window as any).WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+
+    // ========================================
+    // Fetch Interceptor for Currencies Config
+    // ========================================
+    if (!(window as any).__rollercoinFetchInterceptor) {
+        (window as any).__rollercoinFetchInterceptor = true;
+
+        const originalFetch = window.fetch;
+        window.fetch = async function (...args) {
+            const response = await originalFetch.apply(this, args);
+
+            try {
+                // Handle Request object or string URL
+                let url = '';
+                if (typeof args[0] === 'string') {
+                    url = args[0];
+                } else if (args[0] instanceof Request) {
+                    url = args[0].url;
+                } else if (args[0] && typeof (args[0] as any).toString === 'function') {
+                    url = (args[0] as any).toString();
+                }
+
+                if (url.includes('/api/wallet/get-currencies-config')) {
+                    // Clone response to read body without consuming it
+                    const clonedResponse = response.clone();
+                    const data = await clonedResponse.json();
+
+                    if (data.success && data.data?.currencies_config) {
+                        window.postMessage({
+                            type: 'ROLLERCOIN_CURRENCIES_CONFIG',
+                            data: data.data.currencies_config
+                        }, '*');
+                    }
+                }
+
+                // Intercept user settings to get active mining currency allocation
+                if (url.includes('/api/league/user-settings')) {
+                    const clonedResponse = response.clone();
+                    const data = await clonedResponse.json();
+
+                    if (data.success && Array.isArray(data.data)) {
+                        window.postMessage({
+                            type: 'ROLLERCOIN_USER_SETTINGS',
+                            data: data.data
+                        }, '*');
+                    }
+                }
+            } catch (e) {
+                // Silently ignore errors to not break page
+            }
+
+            return response;
+        };
+    }
 })();

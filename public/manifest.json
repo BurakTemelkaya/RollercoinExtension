@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Rollercoin Kazanç Hesaplayıcı",
+  "name": "Calculator for Rollercoin",
   "version": "1.0.0",
-  "description": "Rollercoin oyununda günlük, haftalık ve aylık kazançlarınızı hesaplayın",
+  "description": "Calculate your daily, weekly, and monthly earnings in Rollercoin",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -14,17 +14,15 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
     },
-    "default_title": "Rollercoin Hesaplayıcı"
+    "default_title": "Calculator for Rollercoin"
   },
   "permissions": [
     "storage",
     "activeTab",
-    "scripting",
-    "alarms"
+    "scripting"
   ],
   "host_permissions": [
     "https://rollercoin.com/*",
-    "https://*.rollercoin.com/*",
     "https://api.binance.com/*"
   ],
   "background": {
@@ -34,8 +32,17 @@
   "content_scripts": [
     {
       "matches": [
-        "https://rollercoin.com/*",
-        "https://*.rollercoin.com/*"
+        "https://rollercoin.com/*"
+      ],
+      "js": [
+        "content/websocket-interceptor.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://rollercoin.com/*"
       ],
       "js": [
         "content/content.js"
@@ -50,8 +57,7 @@
         "content/websocket-interceptor.js"
       ],
       "matches": [
-        "https://rollercoin.com/*",
-        "https://*.rollercoin.com/*"
+        "https://rollercoin.com/*"
       ]
     }
   ]

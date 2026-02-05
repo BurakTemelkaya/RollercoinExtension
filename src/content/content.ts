@@ -92,20 +92,32 @@ async function updateLeagueDataFromWS() {
   if (Object.keys(wsPoolPowerData).length === 0) return;
 
   // Currency mapping (WS currency names to display names)
+  // WebSocket sends both clean names (RLT, RST) and _SMALL variants (BNB_SMALL, LTC_SMALL)
   const CURRENCY_MAP: Record<string, string> = {
+    // Game tokens (clean names)
     'RLT': 'RLT',
     'RST': 'RST',
     'HMT': 'HMT',
+    // BTC variants
     'SAT': 'BTC',
     'BTC': 'BTC',
+    // Crypto with _SMALL variants from WebSocket
     'ETH': 'ETH',
+    'ETH_SMALL': 'ETH',
     'SOL': 'SOL',
+    'SOL_SMALL': 'SOL',
     'DOGE': 'DOGE',
+    'DOGE_SMALL': 'DOGE',
     'BNB': 'BNB',
+    'BNB_SMALL': 'BNB',
     'LTC': 'LTC',
+    'LTC_SMALL': 'LTC',
     'XRP': 'XRP',
+    'XRP_SMALL': 'XRP',
     'TRX': 'TRX',
+    'TRX_SMALL': 'TRX',
     'MATIC': 'POL',
+    'MATIC_SMALL': 'POL',
     'POL': 'POL',
   };
 
@@ -248,8 +260,7 @@ async function updateLeagueDataFromGlobalSettings(settings: GlobalSettingsItem[]
 
         return {
           code: mapping.code,
-          currency: item.currency, // WS currency key (e.g. SAT, ETH_SMALL)
-          display_name: mapping.displayName,
+          currency: mapping.displayName, // Use display name (e.g., 'ETH' not 'ETH_SMALL')
           total_block_power: poolPowerGh,
           user_power: 0, // User power is total, not per currency
           block_payout: blockPayout,

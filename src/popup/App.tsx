@@ -6,7 +6,7 @@ import PeriodTabs from './components/PeriodTabs';
 import ComparisonTable from './components/ComparisonTable';
 import WithdrawTimeTable from './components/WithdrawTimeTable';
 import { loadMinWithdrawSettings, DEFAULT_MIN_WITHDRAW } from './components/MinWithdrawSettings';
-import { Language, t, SUPPORTED_LANGUAGES } from '../i18n/translations';
+import { Language, t } from '../i18n/translations';
 
 const App: React.FC = () => {
   const [leagueData, setLeagueData] = useState<LeagueData | null>(null);
@@ -20,6 +20,7 @@ const App: React.FC = () => {
   const [isOnGamePage, setIsOnGamePage] = useState(false);
   const [leagueLoading, setLeagueLoading] = useState(false);
   const [minWithdrawSettings, setMinWithdrawSettings] = useState<MinWithdrawSettingsType>(DEFAULT_MIN_WITHDRAW);
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
 
   // Load language preference and data on mount
   useEffect(() => {
@@ -248,15 +249,64 @@ const App: React.FC = () => {
           {t('appTitle', language)}
         </div>
         <div className="header-controls">
-          <select
-            className="language-select"
-            value={language}
-            onChange={(e) => handleLanguageChange(e.target.value as Language)}
-          >
-            {SUPPORTED_LANGUAGES.map(lang => (
-              <option key={lang.code} value={lang.code}>{lang.flag}</option>
-            ))}
-          </select>
+          <div className="language-dropdown">
+            <button
+              className="language-btn"
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+            >
+              {language === 'tr' ? (
+                <svg viewBox="0 0 640 480" className="flag-icon">
+                  <g fillRule="evenodd">
+                    <path fill="#e30a17" d="M0 0h640v480H0z" />
+                    <path fill="#fff" d="M407 247c0 73-59 132-132 132s-132-59-132-132 59-132 132-132 132 59 132 132z" />
+                    <path fill="#e30a17" d="M413 247c0 56-45 102-102 102s-102-46-102-102c0-57 46-102 102-102s102 46 102 102z" />
+                    <path fill="#fff" d="M430 191l-31 47 4 9 47-4-4 56 23-50 52 7-42-36 19-51-44 30z" />
+                  </g>
+                </svg>
+              ) : (
+                <svg viewBox="0 0 640 480" className="flag-icon">
+                  <path fill="#012169" d="M0 0h640v480H0z" />
+                  <path fill="#FFF" d="m75 0 244 181L562 0h78v62L400 241l240 178v61h-80L320 301 81 480H0v-60l239-178L0 64V0z" />
+                  <path fill="#C8102E" d="m424 281 216 159v40L369 281zm-184 20 6 35L54 480H0zM640 0v3L391 191l2-44L590 0zM0 0l239 176h-60L0 42z" />
+                  <path fill="#FFF" d="M241 0v480h160V0zM0 160v160h640V160z" />
+                  <path fill="#C8102E" d="M0 193v96h640v-96zM273 0v480h96V0z" />
+                </svg>
+              )}
+              <span className="lang-code">{language.toUpperCase()}</span>
+              <span className="dropdown-arrow">{langDropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {langDropdownOpen && (
+              <div className="language-menu">
+                <button
+                  className={`language-option ${language === 'tr' ? 'active' : ''}`}
+                  onClick={() => { handleLanguageChange('tr'); setLangDropdownOpen(false); }}
+                >
+                  <svg viewBox="0 0 640 480" className="flag-icon">
+                    <g fillRule="evenodd">
+                      <path fill="#e30a17" d="M0 0h640v480H0z" />
+                      <path fill="#fff" d="M407 247c0 73-59 132-132 132s-132-59-132-132 59-132 132-132 132 59 132 132z" />
+                      <path fill="#e30a17" d="M413 247c0 56-45 102-102 102s-102-46-102-102c0-57 46-102 102-102s102 46 102 102z" />
+                      <path fill="#fff" d="M430 191l-31 47 4 9 47-4-4 56 23-50 52 7-42-36 19-51-44 30z" />
+                    </g>
+                  </svg>
+                  <span>Türkçe</span>
+                </button>
+                <button
+                  className={`language-option ${language === 'en' ? 'active' : ''}`}
+                  onClick={() => { handleLanguageChange('en'); setLangDropdownOpen(false); }}
+                >
+                  <svg viewBox="0 0 640 480" className="flag-icon">
+                    <path fill="#012169" d="M0 0h640v480H0z" />
+                    <path fill="#FFF" d="m75 0 244 181L562 0h78v62L400 241l240 178v61h-80L320 301 81 480H0v-60l239-178L0 64V0z" />
+                    <path fill="#C8102E" d="m424 281 216 159v40L369 281zm-184 20 6 35L54 480H0zM640 0v3L391 191l2-44L590 0zM0 0l239 176h-60L0 42z" />
+                    <path fill="#FFF" d="M241 0v480h160V0zM0 160v160h640V160z" />
+                    <path fill="#C8102E" d="M0 193v96h640v-96zM273 0v480h96V0z" />
+                  </svg>
+                  <span>English</span>
+                </button>
+              </div>
+            )}
+          </div>
           <div className={`status-badge ${isOnGamePage ? 'connected' : isConnected ? 'warning' : 'disconnected'}`}>
             <span className="status-dot"></span>
             {isOnGamePage ? t('connected', language) : isConnected ? t('cachedData', language) : t('offline', language)}

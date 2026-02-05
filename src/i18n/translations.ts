@@ -206,8 +206,8 @@ export function t(key: TranslationKey, lang: Language): string {
 }
 
 export const SUPPORTED_LANGUAGES: { code: Language; name: string; flag: string }[] = [
-  { code: 'tr', name: 'Türkçe', flag: 'TR' },
-  { code: 'en', name: 'English', flag: 'EN' },
+  { code: 'tr', name: 'Türkçe', flag: '🇹🇷 TR' },
+  { code: 'en', name: 'English', flag: '🇬🇧 EN' },
 ];
 
 export const LANGUAGE_NAMES: Record<Language, string> = {

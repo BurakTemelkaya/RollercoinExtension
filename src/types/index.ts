@@ -100,12 +100,15 @@ export interface CurrencyConfig {
   code: string;           // e.g., "btc", "eth"
   name: string;           // e.g., "BTC", "ETH"
   to_small: number;       // Divisor for coin's normal decimals
+  precision?: number;     // Display precision
   precision_to_balance: number;  // Precision used for balance storage (e.g., 10 for BTC means 10^10)
   balance_key: string;    // Key to use for balance lookup
   display_name: string;   // e.g., "BTC", "POL"
   min: number;            // Minimum withdrawal amount
   is_can_be_mined: boolean;
   disabled_withdraw: boolean;
+  is_in_game_currency?: boolean;  // Whether it's an in-game currency (RLT, RST, HMT)
+  divider?: number;       // Block reward divider (default: 1)
 }
 
 // User balance data from WebSocket

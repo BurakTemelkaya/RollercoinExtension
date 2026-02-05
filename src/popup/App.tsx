@@ -37,7 +37,6 @@ const App: React.FC = () => {
       if (changes['rollercoin_league_data']) {
         const newLeagueData = changes['rollercoin_league_data'].newValue;
         if (newLeagueData) {
-          console.log('League data updated from storage (WebSocket)');
           setLeagueData(newLeagueData);
           fetchPricesForCurrencies(newLeagueData);
         }
@@ -83,13 +82,12 @@ const App: React.FC = () => {
       try {
         const storedLeague = await chrome.storage.local.get('rollercoin_league_data');
         if (storedLeague.rollercoin_league_data) {
-          console.log('Found stored league data');
           setLeagueData(storedLeague.rollercoin_league_data);
           await fetchPricesForCurrencies(storedLeague.rollercoin_league_data);
           gotLeagueData = true;
         }
-      } catch (e) {
-        console.log('Could not get stored data:', e);
+      } catch {
+        // Could not get stored data
       }
 
       // Try to get fresh data from active Rollercoin tab
@@ -112,8 +110,8 @@ const App: React.FC = () => {
             await fetchPricesForCurrencies(leagueResponse.data);
             gotLeagueData = true;
           }
-        } catch (e) {
-          console.log('Content script not responding:', e);
+        } catch {
+          // Content script not responding
         }
       } else {
         setIsConnected(false);
@@ -148,7 +146,6 @@ const App: React.FC = () => {
 
     try {
       const prices = await fetchPrices(cryptos, selectedFiat);
-      console.log('Fetched prices:', prices.prices);
       setPriceData(prices);
     } catch (err) {
       console.error('Error fetching prices:', err);
@@ -171,8 +168,8 @@ const App: React.FC = () => {
             await fetchPricesForCurrencies(response.data);
             setIsConnected(true);
           }
-        } catch (e) {
-          console.log('Could not fetch fresh league data');
+        } catch {
+          // Could not fetch fresh league data
         }
       }
     } catch (err) {

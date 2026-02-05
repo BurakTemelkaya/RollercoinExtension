@@ -19,7 +19,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://rollercoin.com/*",
@@ -30,6 +31,16 @@
     "type": "module"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://rollercoin.com/*"
+      ],
+      "js": [
+        "content/websocket-interceptor.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": [
         "https://rollercoin.com/*"

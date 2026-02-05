@@ -15,7 +15,6 @@ const LEAGUE_STORAGE_KEY = 'rollercoin_league_data';
 async function storeData(data: RollercoinData): Promise<void> {
   try {
     await chrome.storage.local.set({ [STORAGE_KEY]: data });
-    console.log('Rollercoin Calculator: Data stored', data);
   } catch (error) {
     console.error('Rollercoin Calculator: Error storing data', error);
   }
@@ -27,7 +26,6 @@ async function storeData(data: RollercoinData): Promise<void> {
 async function storeLeagueData(data: LeagueData): Promise<void> {
   try {
     await chrome.storage.local.set({ [LEAGUE_STORAGE_KEY]: data });
-    console.log('Rollercoin Calculator: League data stored', data);
   } catch (error) {
     console.error('Rollercoin Calculator: Error storing league data', error);
   }
@@ -99,9 +97,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 /**
  * Handle extension installation or update
  */
-chrome.runtime.onInstalled.addListener((details) => {
-  console.log('Rollercoin Calculator: Extension installed/updated', details.reason);
-
+chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') {
     // First install - could show welcome page or set defaults
     chrome.storage.local.set({
@@ -111,113 +107,146 @@ chrome.runtime.onInstalled.addListener((details) => {
       }
     });
   }
+
+  // Register content script for MAIN world at document_start
+  // This ensures WebSocket interceptor runs before page scripts
+  try {
+    // First unregister if exists
+    try {
+      await chrome.scripting.unregisterContentScripts({ ids: ['rollercoin-ws-interceptor'] });
+    } catch (e) {
+      // Ignore - script may not be registered
+    }
+
+    await chrome.scripting.registerContentScripts([{
+      id: 'rollercoin-ws-interceptor',
+      matches: ['https://rollercoin.com/*'],
+      js: ['content/websocket-interceptor.js'],
+      runAt: 'document_start',
+      world: 'MAIN',
+    }]);
+  } catch (error) {
+    console.error('Rollercoin Calculator: Failed to register content script', error);
+  }
 });
 
 /**
- * Handle tab updates - re-inject content script if needed
+ * Inject WebSocket interceptor using tabs.onUpdated
  */
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url?.includes('rollercoin.com')) {
-    // Page loaded on Rollercoin - content script should auto-inject
-    console.log('Rollercoin Calculator: Rollercoin page loaded', tab.url);
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Inject on loading state to be as early as possible
+  if (changeInfo.status !== 'loading' || !tab.url?.includes('rollercoin.com')) {
+    return;
   }
-});
 
-// ===============================
-// Currencies Config API Fetch
-// ===============================
-
-const CURRENCIES_CONFIG_KEY = 'rollercoin_currencies_config';
-const CURRENCIES_CONFIG_LAST_UPDATE_KEY = 'rollercoin_currencies_config_last_update';
-const CURRENCIES_API_URL = 'https://rollercoin.com/api/wallet/get-currencies-config';
-const UPDATE_INTERVAL_HOURS = 6; // Update every 6 hours
-
-interface CurrencyConfigAPI {
-  name: string;
-  code: string;
-  display_name: string;
-  min: number;
-  to_small: number;
-  is_can_be_mined: boolean;
-  disabled_withdraw: boolean;
-  is_in_game_currency: boolean;
-  balance_key: string;
-  precision_to_balance: number;
-}
-
-/**
- * Fetch currencies config from Rollercoin API
- */
-async function fetchCurrenciesConfig(): Promise<void> {
   try {
-    console.log('Rollercoin Calculator: Fetching currencies config from API...');
+    await chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      world: 'MAIN',
+      func: () => {
+        // This code runs in page context
+        if ((window as any).__rollercoinWSInterceptor) return;
+        (window as any).__rollercoinWSInterceptor = true;
 
-    const response = await fetch(CURRENCIES_API_URL);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
+        const OriginalWebSocket = window.WebSocket;
 
-    const data = await response.json();
+        (window as any).WebSocket = function (url: string | URL, protocols?: string | string[]) {
+          const ws = protocols ? new OriginalWebSocket(url, protocols) : new OriginalWebSocket(url);
+          const wsUrl = typeof url === 'string' ? url : url.toString();
 
-    if (data.success && data.data?.currencies_config) {
-      const configs: CurrencyConfigAPI[] = data.data.currencies_config;
+          if (wsUrl.includes('rollercoin.com')) {
+            ws.addEventListener('message', function (event: MessageEvent) {
+              try {
+                const rawData = event.data;
+                if (typeof rawData !== 'string') return;
 
-      // Filter only minable currencies and format for our use
-      const mineableConfigs = configs
-        .filter(c => c.is_can_be_mined)
-        .map(c => ({
-          code: c.code,
-          name: c.name,
-          display_name: c.display_name,
-          min: c.min,
-          to_small: c.to_small,
-          is_can_be_mined: c.is_can_be_mined,
-          disabled_withdraw: c.disabled_withdraw,
-          is_in_game_currency: c.is_in_game_currency,
-          balance_key: c.balance_key,
-          precision_to_balance: c.precision_to_balance,
-        }));
+                let message;
+                try {
+                  message = JSON.parse(rawData);
+                } catch {
+                  return;
+                }
 
-      await chrome.storage.local.set({
-        [CURRENCIES_CONFIG_KEY]: mineableConfigs,
-        [CURRENCIES_CONFIG_LAST_UPDATE_KEY]: Date.now(),
-      });
+                if (!message || !message.cmd) return;
 
-      console.log('Rollercoin Calculator: Currencies config updated -', mineableConfigs.length, 'minable currencies');
-    }
+                if (message.cmd === 'power' && message.cmdval) {
+                  window.postMessage({ type: 'ROLLERCOIN_WS_POWER', data: { total: message.cmdval.total, penalty: message.cmdval.penalty || 0 } }, '*');
+                }
+
+                if (message.cmd === 'pool_power_response' && message.cmdval) {
+                  window.postMessage({ type: 'ROLLERCOIN_WS_POOL_POWER', data: { currency: message.cmdval.currency, power: message.cmdval.power, league_id: message.cmdval.league_id } }, '*');
+                }
+
+                if (message.cmd === 'balance' && message.cmdval) {
+                  window.postMessage({ type: 'ROLLERCOIN_WS_BALANCE', data: message.cmdval }, '*');
+                }
+
+                if (message.cmd === 'global_settings' && Array.isArray(message.cmdval)) {
+                  window.postMessage({ type: 'ROLLERCOIN_WS_GLOBAL_SETTINGS', data: message.cmdval }, '*');
+                }
+              } catch (e) {
+                // Silently ignore errors
+              }
+            });
+          }
+          return ws;
+        } as any;
+
+        (window as any).WebSocket.prototype = OriginalWebSocket.prototype;
+        (window as any).WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+        (window as any).WebSocket.OPEN = OriginalWebSocket.OPEN;
+        (window as any).WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+        (window as any).WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+
+        // ========================================
+        // Fetch Interceptor for Currencies Config
+        // ========================================
+        if (!(window as any).__rollercoinFetchInterceptor) {
+          (window as any).__rollercoinFetchInterceptor = true;
+
+          const originalFetch = window.fetch;
+          window.fetch = async function (...args) {
+            const response = await originalFetch.apply(this, args);
+
+            try {
+              const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+
+              if (url.includes('/api/wallet/get-currencies-config')) {
+                // Clone response to read body without consuming it
+                const clonedResponse = response.clone();
+                const data = await clonedResponse.json();
+
+                if (data.success && data.data?.currencies_config) {
+                  window.postMessage({
+                    type: 'ROLLERCOIN_CURRENCIES_CONFIG',
+                    data: data.data.currencies_config
+                  }, '*');
+                }
+              }
+
+              // Intercept user settings to get active mining currency allocation
+              if (url.includes('/api/league/user-settings')) {
+                const clonedResponse = response.clone();
+                const data = await clonedResponse.json();
+
+                if (data.success && Array.isArray(data.data)) {
+                  window.postMessage({
+                    type: 'ROLLERCOIN_USER_SETTINGS',
+                    data: data.data
+                  }, '*');
+                }
+              }
+            } catch (e) {
+              // Silently ignore errors to not break page
+            }
+
+            return response;
+          };
+        }
+      }
+    });
   } catch (error) {
-    console.error('Rollercoin Calculator: Error fetching currencies config', error);
-  }
-}
-
-/**
- * Check if currencies config needs update and fetch if needed
- */
-async function checkAndUpdateCurrenciesConfig(): Promise<void> {
-  try {
-    const result = await chrome.storage.local.get(CURRENCIES_CONFIG_LAST_UPDATE_KEY);
-    const lastUpdate = result[CURRENCIES_CONFIG_LAST_UPDATE_KEY] || 0;
-    const hoursSinceUpdate = (Date.now() - lastUpdate) / (1000 * 60 * 60);
-
-    if (hoursSinceUpdate >= UPDATE_INTERVAL_HOURS) {
-      await fetchCurrenciesConfig();
-    } else {
-      console.log('Rollercoin Calculator: Currencies config is fresh (updated', Math.round(hoursSinceUpdate), 'hours ago)');
-    }
-  } catch (error) {
-    console.error('Rollercoin Calculator: Error checking currencies config', error);
-  }
-}
-
-// Fetch on startup
-checkAndUpdateCurrenciesConfig();
-
-// Set up periodic update using alarms
-chrome.alarms.create('updateCurrenciesConfig', { periodInMinutes: UPDATE_INTERVAL_HOURS * 60 });
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'updateCurrenciesConfig') {
-    fetchCurrenciesConfig();
+    console.error('Rollercoin Calculator: Failed to inject interceptor', error);
   }
 });
 

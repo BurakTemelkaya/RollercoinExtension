@@ -1,295 +1,21 @@
 import { LeagueData, LeagueCurrencyData, CurrencyConfig } from '../types';
 
 /**
- * Content script for extracting data from Rollercoin via DOM parsing and WebSocket interception
+ * Content script for receiving WebSocket data from the interceptor
+ * Interceptor is injected by background service worker via chrome.scripting.executeScript
  */
 
 // Storage keys
 const LEAGUE_DATA_KEY = 'rollercoin_league_data';
 const WS_POOL_POWER_KEY = 'rollercoin_ws_pool_power';
 const WS_USER_POWER_KEY = 'rollercoin_ws_user_power';
-const BLOCK_REWARD_SETTINGS_KEY = 'rollercoin_block_reward_settings';
-const BLOCK_REWARD_LAST_UPDATE_KEY = 'rollercoin_block_reward_last_update';
+const CURRENCIES_CONFIG_KEY = 'rollercoin_currencies_config';
 
-// Global settings item from WebSocket
-interface GlobalSettingsItem {
-  currency: string;
-  block_size: number;
-  pool_power_for_currency: number;
-  league_id: string;
-}
-
-// WebSocket'den gelen pool power verileri (currency -> power)
+// WebSocket'den gelen pool power verileri (currency -> power in RAW units)
 let wsPoolPowerData: Record<string, number> = {};
-let wsUserPower: number = 0;
+let wsUserPower: number = 0; // RAW unit
 
-/**
- * Inject WebSocket interceptor script into page context
- */
-function injectWebSocketInterceptor() {
-  const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('content/websocket-interceptor.js');
-  script.onload = function () {
-    console.log('Rollercoin Calculator: WebSocket interceptor injected');
-    (this as HTMLScriptElement).remove();
-  };
-  (document.head || document.documentElement).appendChild(script);
-}
-
-/**
- * Listen for WebSocket messages from the interceptor
- */
-function setupWebSocketListener() {
-  window.addEventListener('message', async (event) => {
-    if (event.source !== window) return;
-
-    // User power message
-    if (event.data?.type === 'ROLLERCOIN_WS_POWER') {
-      wsUserPower = event.data.data.total || 0;
-      console.log('Rollercoin Calculator: WS User Power received:', wsUserPower);
-      await chrome.storage.local.set({ [WS_USER_POWER_KEY]: wsUserPower });
-      await updateLeagueDataFromWS();
-    }
-
-    // Pool power message (per currency)
-    if (event.data?.type === 'ROLLERCOIN_WS_POOL_POWER') {
-      const { currency, power } = event.data.data;
-      wsPoolPowerData[currency] = power;
-      console.log('Rollercoin Calculator: WS Pool Power received:', currency, power);
-      await chrome.storage.local.set({ [WS_POOL_POWER_KEY]: wsPoolPowerData });
-      await updateLeagueDataFromWS();
-    }
-
-    // Balance message - Kullanıcı bakiyeleri
-    if (event.data?.type === 'ROLLERCOIN_WS_BALANCE') {
-      const balances = event.data.data;
-      console.log('Rollercoin Calculator: WS Balance received');
-      // Convert WS balance format to our format
-      const formattedBalances: Record<string, string> = {};
-      for (const [key, value] of Object.entries(balances)) {
-        formattedBalances[key] = String(value);
-      }
-      await chrome.storage.local.set({ 'rollercoin_ws_balances': formattedBalances });
-      // Update league data with balances
-      await updateLeagueDataWithBalances(formattedBalances);
-    }
-
-    // Global settings message - Lig blok ödülleri ve havuz güçleri
-    if (event.data?.type === 'ROLLERCOIN_WS_GLOBAL_SETTINGS') {
-      const settings = event.data.data as GlobalSettingsItem[];
-      console.log('Rollercoin Calculator: WS Global Settings received -', settings.length, 'currencies');
-      await chrome.storage.local.set({ 'rollercoin_ws_global_settings': settings });
-      await updateLeagueDataFromGlobalSettings(settings);
-    }
-  });
-}
-
-/**
- * Update league data using WebSocket data
- */
-async function updateLeagueDataFromWS() {
-  // En az bir pool power verisi gelmediyse bekle
-  if (Object.keys(wsPoolPowerData).length === 0) return;
-
-  // Currency mapping (WS currency names to display names)
-  // WebSocket sends both clean names (RLT, RST) and _SMALL variants (BNB_SMALL, LTC_SMALL)
-  const CURRENCY_MAP: Record<string, string> = {
-    // Game tokens (clean names)
-    'RLT': 'RLT',
-    'RST': 'RST',
-    'HMT': 'HMT',
-    // BTC variants
-    'SAT': 'BTC',
-    'BTC': 'BTC',
-    // Crypto with _SMALL variants from WebSocket
-    'ETH': 'ETH',
-    'ETH_SMALL': 'ETH',
-    'SOL': 'SOL',
-    'SOL_SMALL': 'SOL',
-    'DOGE': 'DOGE',
-    'DOGE_SMALL': 'DOGE',
-    'BNB': 'BNB',
-    'BNB_SMALL': 'BNB',
-    'LTC': 'LTC',
-    'LTC_SMALL': 'LTC',
-    'XRP': 'XRP',
-    'XRP_SMALL': 'XRP',
-    'TRX': 'TRX',
-    'TRX_SMALL': 'TRX',
-    'MATIC': 'POL',
-    'MATIC_SMALL': 'POL',
-    'POL': 'POL',
-  };
-
-  // Build currencies array from WS data
-  const currencies: LeagueCurrencyData[] = Object.entries(wsPoolPowerData).map(([currency, power]) => {
-    const displayName = CURRENCY_MAP[currency] || currency;
-
-    // Block payout values (hardcoded - user can override in settings)
-    let blockPayout = 0;
-    switch (displayName) {
-      case 'BTC': blockPayout = 0.0000176; break;
-      case 'ETH': blockPayout = 0.00061; break;
-      case 'SOL': blockPayout = 0.028; break;
-      case 'DOGE': blockPayout = 12.03; break;
-      case 'BNB': blockPayout = 0.00127; break;
-      case 'LTC': blockPayout = 0.0084; break;
-      case 'XRP': blockPayout = 0.52; break;
-      case 'TRX': blockPayout = 10.83; break;
-      case 'POL': blockPayout = 7.71; break;
-      case 'RLT': blockPayout = 3.33; break;
-      case 'RST': blockPayout = 204; break;
-      case 'HMT': blockPayout = 1528; break;
-    }
-
-    return {
-      currency: displayName,
-      code: displayName.toLowerCase() === 'pol' ? 'matic' : displayName.toLowerCase(), // Map code for Binance API
-      total_block_power: power,
-      user_power: 0, // User power is total, not per currency
-      block_payout: blockPayout,
-      block_created: '',
-      is_in_game_currency: ['RLT', 'RST', 'HMT'].includes(displayName),
-    };
-  });
-
-  // Convert user power from H to Gh (divide by 1e9)
-  const userPowerGh = wsUserPower / 1e9;
-
-  const leagueData: LeagueData = {
-    currencies,
-    maxPower: Math.max(...currencies.map(c => c.total_block_power), 0),
-    user_max_power: userPowerGh,
-    timestamp: Date.now(),
-    currenciesConfig: DEFAULT_CURRENCIES_CONFIG,
-  };
-
-  await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
-  console.log('Rollercoin Calculator: League data updated from WebSocket -', currencies.length, 'currencies');
-}
-
-/**
- * Update league data with balances from WebSocket
- */
-async function updateLeagueDataWithBalances(wsBalances: Record<string, string>) {
-  try {
-    const result = await chrome.storage.local.get(LEAGUE_DATA_KEY);
-    const leagueData: LeagueData | null = result[LEAGUE_DATA_KEY];
-
-    if (!leagueData) {
-      console.log('Rollercoin Calculator: No league data to update with balances');
-      return;
-    }
-
-    // Map WS balance keys to our format
-    const BALANCE_KEY_MAP: Record<string, string> = {
-      'btc': 'btc',
-      'eth': 'eth',
-      'sol': 'sol',
-      'doge': 'doge',
-      'bnb': 'bnb',
-      'ltc': 'ltc',
-      'xrp': 'xrp',
-      'trx': 'trx',
-      'matic': 'matic',
-      'rlt': 'rlt',
-      'rst': 'rst',
-      'hmt': 'hmt',
-    };
-
-    const userBalances: Record<string, string> = {};
-    for (const [key, value] of Object.entries(wsBalances)) {
-      const mappedKey = BALANCE_KEY_MAP[key];
-      if (mappedKey) {
-        userBalances[mappedKey] = value;
-      }
-    }
-
-    leagueData.userBalances = userBalances;
-    await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
-    console.log('Rollercoin Calculator: League data updated with WS balances');
-  } catch (e) {
-    console.error('Rollercoin Calculator: Error updating league data with balances', e);
-  }
-}
-
-/**
- * Update league data from global_settings WebSocket message
- * This provides accurate block rewards and pool powers for the user's league
- */
-async function updateLeagueDataFromGlobalSettings(settings: GlobalSettingsItem[]) {
-  try {
-    // Also update wsPoolPowerData from global settings
-    for (const item of settings) {
-      wsPoolPowerData[item.currency] = item.pool_power_for_currency;
-    }
-    await chrome.storage.local.set({ [WS_POOL_POWER_KEY]: wsPoolPowerData });
-
-    // Map currency codes from global settings to our format
-    const CURRENCY_MAP: Record<string, { code: string; displayName: string }> = {
-      'SAT': { code: 'btc', displayName: 'BTC' },
-      'ETH_SMALL': { code: 'eth', displayName: 'ETH' },
-      'SOL_SMALL': { code: 'sol', displayName: 'SOL' },
-      'DOGE_SMALL': { code: 'doge', displayName: 'DOGE' },
-      'BNB_SMALL': { code: 'bnb', displayName: 'BNB' },
-      'LTC_SMALL': { code: 'ltc', displayName: 'LTC' },
-      'XRP_SMALL': { code: 'xrp', displayName: 'XRP' },
-      'TRX_SMALL': { code: 'trx', displayName: 'TRX' },
-      'MATIC_SMALL': { code: 'matic', displayName: 'POL' },
-      'RLT': { code: 'rlt', displayName: 'RLT' },
-      'RST': { code: 'rst', displayName: 'RST' },
-      'HMT': { code: 'hmt', displayName: 'HMT' },
-    };
-
-    // Get user power from storage
-    const userPowerResult = await chrome.storage.local.get(WS_USER_POWER_KEY);
-    const userPower = userPowerResult[WS_USER_POWER_KEY] || wsUserPower || 0;
-    const userPowerGh = userPower / 1e9;
-
-    // Build currencies from global settings
-    const currencies: LeagueCurrencyData[] = settings
-      .filter(item => CURRENCY_MAP[item.currency])
-      .map(item => {
-        const mapping = CURRENCY_MAP[item.currency];
-        const poolPowerGh = item.pool_power_for_currency / 1e9;
-
-        // Convert block_size based on currency (it's already in "small" units)
-        const configForCurrency = DEFAULT_CURRENCIES_CONFIG.find(c => c.code === mapping.code);
-        const toSmall = configForCurrency?.to_small || 1;
-        const blockPayout = item.block_size / toSmall;
-
-        return {
-          code: mapping.code,
-          currency: mapping.displayName, // Use display name (e.g., 'ETH' not 'ETH_SMALL')
-          total_block_power: poolPowerGh,
-          user_power: 0, // User power is total, not per currency
-          block_payout: blockPayout,
-          block_created: '',
-          is_in_game_currency: ['RLT', 'RST', 'HMT'].includes(mapping.displayName),
-        };
-      });
-
-    // Get existing league data to preserve balances
-    const result = await chrome.storage.local.get(LEAGUE_DATA_KEY);
-    const existingLeagueData: LeagueData | null = result[LEAGUE_DATA_KEY];
-
-    const leagueData: LeagueData = {
-      currencies,
-      maxPower: Math.max(...currencies.map(c => c.total_block_power), 0),
-      user_max_power: userPowerGh,
-      timestamp: Date.now(),
-      currenciesConfig: DEFAULT_CURRENCIES_CONFIG,
-      userBalances: existingLeagueData?.userBalances,
-    };
-
-    await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
-    console.log('Rollercoin Calculator: League data updated from global_settings -', currencies.length, 'currencies');
-  } catch (e) {
-    console.error('Rollercoin Calculator: Error updating league data from global settings', e);
-  }
-}
-
-// Default currencies config with hardcoded min withdraw values (updated from API 2024)
+// Default currencies config with min withdraw values
 const DEFAULT_CURRENCIES_CONFIG: CurrencyConfig[] = [
   { code: 'btc', name: 'BTC', display_name: 'BTC', min: 0.00085, is_can_be_mined: true, disabled_withdraw: false, to_small: 100000000, precision_to_balance: 10, balance_key: 'SAT' },
   { code: 'eth', name: 'ETH', display_name: 'ETH', min: 0.014, is_can_be_mined: true, disabled_withdraw: false, to_small: 10000000000, precision_to_balance: 10, balance_key: 'ETH_SMALL' },
@@ -305,581 +31,53 @@ const DEFAULT_CURRENCIES_CONFIG: CurrencyConfig[] = [
   { code: 'hmt', name: 'HMT', display_name: 'HMT', min: 500, is_can_be_mined: true, disabled_withdraw: true, to_small: 1000000, precision_to_balance: 6, balance_key: 'HMT' },
 ];
 
-// Default pool power values (from WebSocket pool_power_response, in raw units)
-// These are fallback values when DOM parsing fails
-const DEFAULT_POOL_POWER: Record<string, number> = {
-  'SAT': 2809885774084,        // BTC
-  'ETH_SMALL': 2522035777396,  // ETH
-  'SOL_SMALL': 4151839148373,  // SOL
-  'DOGE_SMALL': 3050815259512, // DOGE
-  'BNB_SMALL': 2163631736963,  // BNB
-  'LTC_SMALL': 928850529645,   // LTC
-  'XRP_SMALL': 1487908313055,  // XRP
-  'TRX_SMALL': 4288895878847,  // TRX
-  'MATIC_SMALL': 1929269880036,// POL
-  'RLT': 2812911677039,        // RLT
-  'RST': 1108675107540,        // RST
-  'HMT': 1454535107323,        // HMT
+// Fallback block rewards if global_settings is missing
+const DEFAULT_BLOCK_REWARDS: Record<string, number> = {
+  'BTC': 0.00035000,  // Approx 35000 SAT
+  'ETH': 0.00550000,
+  'BNB': 0.03500000,
+  'MATIC': 50.000000,
+  'SOL': 0.23000000,
+  'LTC': 0.01800000,
+  'DOGE': 140.000000,
+  'TRX': 70.000000,
+  'XRP': 20.000000,
+  'RLT': 20.000000,
+  'RST': 150.000000,
+  'HMT': 200.000000
 };
 
-// Power unit multipliers (to convert to Gh base)
-const POWER_UNITS: Record<string, number> = {
-  'H': 1e-9,
-  'Kh': 1e-6,
-  'Mh': 1e-3,
-  'Gh': 1,
-  'Th': 1e3,
-  'Ph': 1e6,
-  'Eh': 1e9,
-  'Zh': 1e12,
-  'Yh': 1e15,
+// Global settings item from WebSocket
+interface GlobalSettingsItem {
+  currency: string;
+  block_size: number;
+  pool_power_for_currency: number;
+  league_id: string;
+}
+
+// Currency mapping
+const CURRENCY_MAP: Record<string, { code: string; displayName: string }> = {
+  'SAT': { code: 'btc', displayName: 'BTC' },
+  'ETH_SMALL': { code: 'eth', displayName: 'ETH' },
+  'SOL_SMALL': { code: 'sol', displayName: 'SOL' },
+  'DOGE_SMALL': { code: 'doge', displayName: 'DOGE' },
+  'BNB_SMALL': { code: 'bnb', displayName: 'BNB' },
+  'LTC_SMALL': { code: 'ltc', displayName: 'LTC' },
+  'XRP_SMALL': { code: 'xrp', displayName: 'XRP' },
+  'TRX_SMALL': { code: 'trx', displayName: 'TRX' },
+  'TRX': { code: 'trx', displayName: 'TRX' }, // Sometimes without SMALL suffix
+  'MATIC_SMALL': { code: 'matic', displayName: 'POL' },
+  'RLT': { code: 'rlt', displayName: 'RLT' },
+  'RST': { code: 'rst', displayName: 'RST' },
+  'HMT': { code: 'hmt', displayName: 'HMT' },
 };
 
-/**
- * Parse power string like "13.152 Eh/s" to Gh value
- */
-function parsePowerString(powerStr: string): number {
-  const match = powerStr.trim().match(/([\d.,]+)\s*([A-Za-z]+)/i);
-  if (!match) return 0;
-
-  const value = parseFloat(match[1].replace(',', '.'));
-  const unit = match[2].replace(/\/s$/i, ''); // Remove /s suffix
-
-  const multiplier = POWER_UNITS[unit] || POWER_UNITS[unit.charAt(0).toUpperCase() + unit.slice(1).toLowerCase()] || 1;
-  return value * multiplier;
-}
-
-/**
- * Open all reward block dropdowns by adding 'open' class
- * Returns the original open states so they can be restored
- */
-function openAllDropdowns(): boolean[] {
-  const rewardBlocks = document.querySelectorAll('.reward-block-wrapper');
-  const originalStates: boolean[] = [];
-
-  console.log('Rollercoin Calculator: Found', rewardBlocks.length, 'reward-block-wrapper elements');
-
-  rewardBlocks.forEach((block, index) => {
-    const wasOpen = block.classList.contains('open');
-    originalStates.push(wasOpen);
-
-    if (!wasOpen) {
-      block.classList.add('open');
-      console.log('Rollercoin Calculator: Opened dropdown', index);
-    }
-  });
-
-  return originalStates;
-}
-
-/**
- * Restore dropdown states to their original values
- */
-function restoreDropdownStates(originalStates: boolean[]): void {
-  const rewardBlocks = document.querySelectorAll('.reward-block-wrapper');
-
-  rewardBlocks.forEach((block, index) => {
-    const shouldBeOpen = originalStates[index] ?? false;
-    if (shouldBeOpen) {
-      block.classList.add('open');
-    } else {
-      block.classList.remove('open');
-    }
-  });
-
-  console.log('Rollercoin Calculator: Restored dropdown states');
-}
-
-/**
- * Open the React-Select dropdown by simulating proper mouse events
- * Returns true if successfully opened
- */
-async function openReactSelect(selectControl: HTMLElement): Promise<boolean> {
-  // Try multiple approaches to open React-Select
-
-  // Approach 1: Dispatch mousedown event (React-Select listens to this)
-  const mouseDownEvent = new MouseEvent('mousedown', {
-    bubbles: true,
-    cancelable: true,
-    view: window,
-    button: 0,
-  });
-  selectControl.dispatchEvent(mouseDownEvent);
-
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  // Check if opened
-  let isOpen = selectControl.classList.contains('rollercoin-select__control--menu-is-open');
-  if (isOpen) {
-    console.log('Rollercoin Calculator: Select opened via mousedown');
-    return true;
-  }
-
-  // Approach 2: Find and click the dropdown indicator
-  const indicator = selectControl.querySelector('.rollercoin-select__dropdown-indicator');
-  if (indicator && indicator instanceof HTMLElement) {
-    indicator.dispatchEvent(mouseDownEvent);
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    isOpen = selectControl.classList.contains('rollercoin-select__control--menu-is-open');
-    if (isOpen) {
-      console.log('Rollercoin Calculator: Select opened via indicator mousedown');
-      return true;
-    }
-  }
-
-  // Approach 3: Focus input and trigger events
-  const input = selectControl.querySelector('input');
-  if (input) {
-    input.focus();
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // Dispatch click on the control
-    selectControl.click();
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    isOpen = selectControl.classList.contains('rollercoin-select__control--menu-is-open');
-    if (isOpen) {
-      console.log('Rollercoin Calculator: Select opened via input focus + click');
-      return true;
-    }
-  }
-
-  console.log('Rollercoin Calculator: Could not open select with events');
-  return false;
-}
-
-/**
- * Close the React-Select dropdown
- */
-async function closeReactSelect(selectControl: HTMLElement): Promise<void> {
-  // Click on the control again to toggle close, or blur
-  const input = selectControl.querySelector('input');
-  if (input) {
-    input.blur();
-  }
-
-  // Also try escape key
-  const escapeEvent = new KeyboardEvent('keydown', {
-    key: 'Escape',
-    code: 'Escape',
-    bubbles: true,
-    cancelable: true,
-  });
-  selectControl.dispatchEvent(escapeEvent);
-
-  await new Promise(resolve => setTimeout(resolve, 100));
-}
-
-/**
- * Extract user balances from the currency select dropdown
- * Opens the select, reads balances, then closes it
- */
-async function extractBalancesFromDOM(): Promise<Record<string, string> | undefined> {
-  console.log('Rollercoin Calculator: Attempting to extract balances from DOM...');
-
-  // Find the rollercoin select control
-  const selectControl = document.querySelector('.rollercoin-select__control');
-  if (!selectControl || !(selectControl instanceof HTMLElement)) {
-    console.log('Rollercoin Calculator: Currency select not found');
-    return undefined;
-  }
-
-  // Check if already open
-  const wasOpen = selectControl.classList.contains('rollercoin-select__control--menu-is-open');
-
-  // If not open, try to open it
-  if (!wasOpen) {
-    console.log('Rollercoin Calculator: Opening currency select...');
-    const opened = await openReactSelect(selectControl);
-    if (!opened) {
-      console.log('Rollercoin Calculator: Failed to open currency select');
-      return undefined;
-    }
-    // Wait for menu to render
-    await new Promise(resolve => setTimeout(resolve, 300));
-  }
-
-  // Now try to find the dropdown menu and extract balances
-  const balances: Record<string, string> = {};
-
-  // Currency alt name to balance key mapping
-  const CURRENCY_ALT_MAP: Record<string, string> = {
-    'RLT': 'rlt',
-    'RST': 'rst',
-    'HMT': 'hmt',
-    'SAT': 'btc',
-    'ETH_SMALL': 'eth',
-    'SOL_SMALL': 'sol',
-    'DOGE_SMALL': 'doge',
-    'BNB_SMALL': 'bnb',
-    'LTC_SMALL': 'ltc',
-    'XRP_SMALL': 'xrp',
-    'TRX_SMALL': 'trx',
-    'MATIC_SMALL': 'matic',
-    'ALGO_SMALL': 'algo',
-  };
-
-  // Look for menu options with balance info
-  const menuList = document.querySelector('.rollercoin-select__menu-list');
-  if (menuList) {
-    const options = menuList.querySelectorAll('.rollercoin-select__option');
-    console.log('Rollercoin Calculator: Found', options.length, 'options in currency select');
-
-    options.forEach(option => {
-      // Get currency from img alt attribute
-      const img = option.querySelector('img');
-      const altName = img?.getAttribute('alt') || '';
-
-      // Map alt name to our balance key
-      const currencyKey = CURRENCY_ALT_MAP[altName] || altName.toLowerCase().replace('_small', '');
-
-      // Skip unknown currencies
-      if (!currencyKey) return;
-
-      // Get balance from the inner spans
-      // Structure: <p><span>29</span><span>.960782<small class="btc-small-numbers">53</small></span></p>
-      const innerDiv = option.querySelector('.react-select-option-inner p');
-      if (innerDiv) {
-        const spans = innerDiv.querySelectorAll(':scope > span');
-        let balanceStr = '';
-
-        spans.forEach(span => {
-          // Get text content but also include small element if present
-          let spanText = '';
-          span.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-              spanText += node.textContent || '';
-            } else if (node.nodeType === Node.ELEMENT_NODE && (node as Element).tagName === 'SMALL') {
-              spanText += (node as Element).textContent || '';
-            }
-          });
-          balanceStr += spanText;
-        });
-
-        // Parse the balance string
-        const balance = parseFloat(balanceStr.replace(',', '.'));
-        if (!isNaN(balance)) {
-          balances[currencyKey] = balanceStr.trim();
-          console.log('Rollercoin Calculator: Balance for', currencyKey, ':', balanceStr.trim());
-        }
-      }
-    });
-  } else {
-    console.log('Rollercoin Calculator: Menu list not found after opening select');
-  }
-
-  // Close the select if we opened it
-  if (!wasOpen) {
-    console.log('Rollercoin Calculator: Closing currency select...');
-    await closeReactSelect(selectControl);
-  }
-
-  if (Object.keys(balances).length > 0) {
-    console.log('Rollercoin Calculator: Extracted balances for', Object.keys(balances).length, 'currencies');
-    return balances;
-  }
-
-  return undefined;
-}
-
-/**
- * Extract user power from DOM: <span class="power-value">13.152 Eh/s</span>
- */
-function extractUserPowerFromDOM(): number {
-  const powerSpan = document.querySelector('span.power-value');
-  if (!powerSpan) {
-    console.log('Rollercoin Calculator: Could not find power-value span');
-    return 0;
-  }
-
-  const powerText = powerSpan.textContent || '';
-  const power = parsePowerString(powerText);
-  console.log('Rollercoin Calculator: Extracted user power from DOM:', powerText, '->', power, 'Gh');
-  return power;
-}
-
-/**
- * Extract user's mining power allocation per currency from DOM
- * This comes from the dropdown with .currencies-dropdown-container.my-power
- * Returns a map of currency -> user power in Gh
- */
-function extractUserMiningAllocationFromDOM(): Record<string, number> {
-  const userPowers: Record<string, number> = {};
-
-  // Find containers with 'my-power' class - these contain user's mining allocation
-  const myPowerContainers = document.querySelectorAll('.currencies-dropdown-container.my-power');
-
-  console.log('Rollercoin Calculator: Found', myPowerContainers.length, 'my-power containers');
-
-  myPowerContainers.forEach((container, index) => {
-    const items = container.querySelectorAll('.currencies-dropdown-item');
-    console.log('Rollercoin Calculator: My-power container', index, 'has', items.length, 'items');
-
-    items.forEach(item => {
-      const currencySpan = item.querySelector('.dropdown-item-currency');
-      const powerContainer = item.querySelector('.dropdown-item-power');
-      const powerP = powerContainer?.querySelector('p');
-
-      if (currencySpan && powerP) {
-        const currency = currencySpan.textContent?.trim().toUpperCase() || '';
-        const powerText = powerP.textContent?.trim() || '';
-        const power = parsePowerString(powerText);
-
-        if (currency && power > 0) {
-          userPowers[currency] = power;
-          console.log('Rollercoin Calculator: User mining', currency, ':', powerText, '->', power, 'Gh');
-        }
-      }
-    });
-  });
-
-  return userPowers;
-}
-
-/**
- * Extract league powers from DOM dropdown
- * Looks for currencies in containers WITHOUT .my-power class (these have league totals)
- */
-function extractLeaguePowersFromDOM(): Array<{ currency: string; power: number; isGameToken: boolean }> {
-  const results: Array<{ currency: string; power: number; isGameToken: boolean }> = [];
-
-  // Find all open reward blocks
-  const rewardBlocks = document.querySelectorAll('.reward-block-wrapper.open');
-
-  if (rewardBlocks.length === 0) {
-    console.log('Rollercoin Calculator: No open reward blocks found');
-    return results;
-  }
-
-  console.log('Rollercoin Calculator: Found', rewardBlocks.length, 'open reward blocks');
-
-  // Look for currency containers WITHOUT 'my-power' class (these have league powers)
-  // We need to check each reward block
-  rewardBlocks.forEach((rewardBlock, blockIndex) => {
-    // Get all containers in this block
-    const allContainers = rewardBlock.querySelectorAll('.currencies-dropdown-container');
-
-    allContainers.forEach((container, containerIndex) => {
-      // Skip containers with 'my-power' class - those have user's allocation
-      if (container.classList.contains('my-power')) {
-        console.log('Rollercoin Calculator: Skipping my-power container in block', blockIndex);
-        return;
-      }
-
-      // Determine if this is game tokens container
-      // Check if there's a "Game Currencies" title before this container
-      let isGameTokens = false;
-
-      // Walk back to find the title
-      let current = container.previousElementSibling;
-      while (current) {
-        if (current.classList.contains('power-wrapper')) {
-          const title = current.querySelector('.title-block');
-          if (title?.textContent?.includes('Game')) {
-            isGameTokens = true;
-          }
-          break;
-        }
-        current = current.previousElementSibling;
-      }
-
-      const items = container.querySelectorAll('.currencies-dropdown-item');
-      console.log('Rollercoin Calculator: League container', containerIndex, 'in block', blockIndex,
-        '- game tokens:', isGameTokens, '- items:', items.length);
-
-      items.forEach(item => {
-        const currencySpan = item.querySelector('.dropdown-item-currency');
-        const powerContainer = item.querySelector('.dropdown-item-power');
-        const powerP = powerContainer?.querySelector('p');
-
-        if (currencySpan && powerP) {
-          const currency = currencySpan.textContent?.trim().toUpperCase() || '';
-          const powerText = powerP.textContent?.trim() || '';
-
-          // Skip if power text is empty or zero
-          if (!powerText || powerText === '0' || powerText === '0 Gh/s') {
-            return;
-          }
-
-          const power = parsePowerString(powerText);
-
-          console.log('Rollercoin Calculator: League power for', currency, ':', powerText, '->', power, 'Gh');
-
-          // Only add if we have valid power and haven't added this currency yet
-          if (currency && power > 0 && !results.find(r => r.currency === currency)) {
-            results.push({
-              currency,
-              power,
-              isGameToken: isGameTokens || ['RLT', 'RST', 'HMT'].includes(currency)
-            });
-          }
-        }
-      });
-    });
-  });
-
-  console.log('Rollercoin Calculator: Extracted', results.length, 'currencies with league powers from DOM');
-  return results;
-}
-
-/**
- * Build league data from DOM extraction (fallback when API not used)
- */
-function buildLeagueDataFromDOM(): LeagueData | null {
-  const userPower = extractUserPowerFromDOM();
-  let leaguePowers = extractLeaguePowersFromDOM();
-  const userMiningAllocation = extractUserMiningAllocationFromDOM();
-
-  // If no league powers from DOM, use previous stored values or default
-  if (leaguePowers.length === 0) {
-    console.log('Rollercoin Calculator: No league data in DOM, trying to use previous stored league powers...');
-    // Try to get previous league data from storage synchronously (not ideal, but safe for fallback)
-    let previousLeaguePowers: Array<{ currency: string; power: number; isGameToken: boolean }> = [];
-    try {
-      const prev = window.localStorage.getItem('rollercoin_league_data');
-      if (prev) {
-        const prevObj = JSON.parse(prev);
-        if (prevObj && Array.isArray(prevObj.currencies)) {
-          previousLeaguePowers = prevObj.currencies.map((c: any) => ({
-            currency: c.currency,
-            power: c.total_block_power,
-            isGameToken: c.is_in_game_currency
-          }));
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-    if (previousLeaguePowers.length > 0) {
-      leaguePowers = previousLeaguePowers;
-      console.log('Rollercoin Calculator: Used previous league powers from storage.');
-    } else {
-      // Build from default pool power and currencies config
-      leaguePowers = DEFAULT_CURRENCIES_CONFIG.map(config => {
-        const balanceKey = config.balance_key;
-        const power = DEFAULT_POOL_POWER[balanceKey] || 0;
-        const isGameToken = ['RLT', 'RST', 'HMT'].includes(config.display_name);
-        return {
-          currency: config.display_name,
-          power: power,
-          isGameToken: isGameToken,
-        };
-      });
-      console.log('Rollercoin Calculator: Used default pool power values.');
-    }
-  }
-
-  console.log('Rollercoin Calculator: User mining allocation:', userMiningAllocation);
-
-  // Build currencies array
-  const currencies: LeagueCurrencyData[] = leaguePowers.map(lp => {
-    // Block payout values from Rollercoin League page (updated regularly)
-    // These are the "Per block" values shown on /game/league
-    let blockPayout = 0;
-    switch (lp.currency) {
-      case 'BTC': blockPayout = 0.0000176; break;   // Per block from league page
-      case 'ETH': blockPayout = 0.00061; break;
-      case 'SOL': blockPayout = 0.028; break;
-      case 'DOGE': blockPayout = 12.03; break;
-      case 'BNB': blockPayout = 0.00127; break;
-      case 'LTC': blockPayout = 0.0084; break;
-      case 'XRP': blockPayout = 0.52; break;
-      case 'TRX': blockPayout = 10.83; break;
-      case 'POL': blockPayout = 7.71; break;
-      case 'RLT': blockPayout = 3.33; break;
-      case 'RST': blockPayout = 204; break;
-      case 'HMT': blockPayout = 1528; break;
-      default: blockPayout = 0;
-    }
-
-    // Get user's mining power for this currency from the my-power container
-    const userPowerForCurrency = userMiningAllocation[lp.currency] || 0;
-
-    return {
-      currency: lp.currency,
-      code: lp.currency.toLowerCase() === 'pol' ? 'matic' : lp.currency.toLowerCase(), // Map code for Binance API
-      total_block_power: lp.power,
-      user_power: userPowerForCurrency,
-      block_payout: blockPayout,
-      block_created: '',
-      is_in_game_currency: lp.isGameToken,
-    };
-  });
-
-  // Find which currency the user is actively mining (has user_power > 0)
-  const activeMiningCurrency = currencies.find(c => c.user_power > 0)?.currency;
-
-  return {
-    currencies,
-    maxPower: Math.max(...currencies.map(c => c.total_block_power), 0),
-    user_max_power: userPower,
-    timestamp: Date.now(),
-    currenciesConfig: DEFAULT_CURRENCIES_CONFIG,
-    userBalances: undefined, // Will be filled by fetchDataFromDOM if possible
-    currentMiningCurrency: activeMiningCurrency,
-  };
-}
-
-/**
- * Extract current mining coin's block reward from game page
- * Looks for: <p class="title">Block <span class="reward-number">10.83</span><span class="satoshi-text">TRX</span></p>
- */
-function extractCurrentMiningBlockReward(): { currency: string; reward: number } | null {
-  // Find the block reward display
-  const rewardNumberEl = document.querySelector('.reward-number');
-  const satoshiTextEl = document.querySelector('.satoshi-text');
-
-  if (!rewardNumberEl || !satoshiTextEl) {
-    console.log('Rollercoin Calculator: Block reward elements not found on game page');
-    return null;
-  }
-
-  const rewardText = rewardNumberEl.textContent?.trim() || '';
-  let currencyText = satoshiTextEl.textContent?.trim().toUpperCase() || '';
-
-  // Map special cases
-  if (currencyText === 'MATIC') currencyText = 'POL';
-  if (currencyText === 'SATOSHI' || currencyText === 'SAT') currencyText = 'BTC';
-
-  const reward = parseFloat(rewardText.replace(',', '.'));
-
-  if (isNaN(reward) || reward <= 0 || !currencyText) {
-    console.log('Rollercoin Calculator: Could not parse block reward');
-    return null;
-  }
-
-  console.log(`Rollercoin Calculator: Current mining block reward: ${reward} ${currencyText}`);
-  return { currency: currencyText, reward };
-}
-
-/**
- * Save single block reward to storage (merge with existing)
- */
-async function saveCurrentMiningBlockReward(): Promise<void> {
-  const currentReward = extractCurrentMiningBlockReward();
-  if (!currentReward) return;
-
-  try {
-    // Load existing block rewards
-    const result = await chrome.storage.local.get(BLOCK_REWARD_SETTINGS_KEY);
-    const existingRewards = result[BLOCK_REWARD_SETTINGS_KEY] || {};
-
-    // Merge with current mining coin reward
-    const updatedRewards = {
-      ...existingRewards,
-      [currentReward.currency]: currentReward.reward,
-    };
-
-    await chrome.storage.local.set({
-      [BLOCK_REWARD_SETTINGS_KEY]: updatedRewards,
-    });
-
-    console.log(`Rollercoin Calculator: Saved ${currentReward.currency} block reward: ${currentReward.reward}`);
-  } catch (error) {
-    console.error('Rollercoin Calculator: Error saving current mining block reward:', error);
-  }
-}
+// Balance key mapping
+const BALANCE_KEY_MAP: Record<string, string> = {
+  'btc': 'btc', 'eth': 'eth', 'sol': 'sol', 'doge': 'doge',
+  'bnb': 'bnb', 'ltc': 'ltc', 'xrp': 'xrp', 'trx': 'trx',
+  'matic': 'matic', 'rlt': 'rlt', 'rst': 'rst', 'hmt': 'hmt',
+};
 
 /**
  * Get stored league data
@@ -888,236 +86,324 @@ async function getStoredLeagueData(): Promise<LeagueData | null> {
   try {
     const result = await chrome.storage.local.get(LEAGUE_DATA_KEY);
     return result[LEAGUE_DATA_KEY] || null;
-  } catch {
+  } catch (e) {
+    console.error('Rollercoin Calculator: Error getting stored league data', e);
     return null;
   }
 }
 
-// Store for pending data
-let pendingLeagueData: LeagueData | null = null;
-
 /**
- * Fetch data using DOM parsing
- * Automatically opens all dropdowns, extracts data, then restores original states
- * Also tries to extract balances from the currency select
+ * Get currencies config
  */
-async function fetchDataFromDOM(): Promise<LeagueData | null> {
-  console.log('Rollercoin Calculator: Fetching data from DOM...');
-
-  // Wait a bit for page to fully render
-  await new Promise(resolve => setTimeout(resolve, 500));
-
-  // Open all dropdowns and save original states
-  const originalStates = openAllDropdowns();
-
-  // Wait for content to render after opening
-  await new Promise(resolve => setTimeout(resolve, 300));
-
-  // Try to extract data
-  let leagueData = buildLeagueDataFromDOM();
-
-  // If we got no currencies, wait a bit more and retry
-  if (!leagueData || leagueData.currencies.length === 0) {
-    console.log('Rollercoin Calculator: No data on first try, waiting and retrying...');
-    await new Promise(resolve => setTimeout(resolve, 500));
-    leagueData = buildLeagueDataFromDOM();
-  }
-
-  // Restore original dropdown states
-  restoreDropdownStates(originalStates);
-
-  // Try to extract balances from currency select (optional, won't fail if not found)
-  if (leagueData) {
-    try {
-      const balances = await extractBalancesFromDOM();
-      if (balances && Object.keys(balances).length > 0) {
-        leagueData.userBalances = balances;
-        console.log('Rollercoin Calculator: Added balances to league data');
-      }
-    } catch (e) {
-      console.log('Rollercoin Calculator: Could not extract balances from DOM');
-    }
-  }
-
-  if (leagueData && leagueData.currencies.length > 0) {
-    pendingLeagueData = leagueData;
-    await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
-    console.log('Rollercoin Calculator: DOM data stored -', leagueData.currencies.length, 'currencies');
-  } else {
-    console.log('Rollercoin Calculator: Could not extract league data from DOM');
-  }
-
-  return leagueData;
-}
-
-/**
- * Parse block rewards from league page DOM by clicking each currency
- * URL: https://rollercoin.com/game/league
- * Clicks each coin in "My League" card to get block reward values
- */
-async function parseBlockRewardsFromLeaguePage(): Promise<Record<string, number> | null> {
-  console.log('Rollercoin Calculator: Parsing block rewards from league page by clicking coins...');
-
-  const blockRewards: Record<string, number> = {};
-
-  // Find the current league card
-  const currentLeagueCard = document.querySelector('.league-card-wrapper-inner.current-league');
-
-  if (!currentLeagueCard) {
-    console.log('Rollercoin Calculator: Current league card not found');
-    return null;
-  }
-
-  // Find all currency buttons in the league card
-  const currencyButtons = currentLeagueCard.querySelectorAll('.league-currency');
-
-  if (currencyButtons.length === 0) {
-    console.log('Rollercoin Calculator: No currency buttons found in league card');
-    return null;
-  }
-
-  console.log(`Rollercoin Calculator: Found ${currencyButtons.length} currency buttons`);
-
-  // Click each currency button and read the block reward
-  for (let i = 0; i < currencyButtons.length; i++) {
-    const button = currencyButtons[i] as HTMLElement;
-
-    // Get currency name from the img alt attribute
-    const img = button.querySelector('img');
-    if (!img) continue;
-
-    // Extract currency from src (e.g., "currencies/btc.svg" -> "BTC")
-    const src = img.getAttribute('src') || '';
-    const currencyMatch = src.match(/currencies\/([a-z]+)\.svg/i);
-    if (!currencyMatch) continue;
-
-    let currencyCode = currencyMatch[1].toUpperCase();
-    // Map special cases
-    if (currencyCode === 'MATIC') currencyCode = 'POL';
-
-    // Click the button
-    button.click();
-
-    // Wait for UI to update
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    // Read the block reward text
-    const blockRewardEl = currentLeagueCard.querySelector('.block-reward-text');
-    if (blockRewardEl) {
-      const rewardText = blockRewardEl.textContent?.trim() || '';
-      // Parse value like "0.0084 LTC" or "204 RST"
-      const match = rewardText.match(/([\d.,]+)/);
-      if (match) {
-        const numericValue = parseFloat(match[1].replace(',', '.'));
-        if (!isNaN(numericValue) && numericValue > 0) {
-          blockRewards[currencyCode] = numericValue;
-          console.log(`Rollercoin Calculator: ${currencyCode} block reward: ${numericValue}`);
-        }
-      }
-    }
-  }
-
-  if (Object.keys(blockRewards).length === 0) {
-    console.log('Rollercoin Calculator: No block rewards found');
-    return null;
-  }
-
-  console.log('Rollercoin Calculator: All block rewards:', blockRewards);
-  return blockRewards;
-}
-
-/**
- * Save block rewards to storage
- */
-async function saveBlockRewardsToStorage(rewards: Record<string, number>): Promise<void> {
+async function getCurrenciesConfig(): Promise<CurrencyConfig[]> {
   try {
-    await chrome.storage.local.set({
-      [BLOCK_REWARD_SETTINGS_KEY]: rewards,
-      [BLOCK_REWARD_LAST_UPDATE_KEY]: Date.now()
-    });
-    console.log('Rollercoin Calculator: Block rewards saved to storage');
-  } catch (error) {
-    console.error('Rollercoin Calculator: Error saving block rewards:', error);
+    const result = await chrome.storage.local.get('rollercoin_currencies_config');
+    return result.rollercoin_currencies_config || DEFAULT_CURRENCIES_CONFIG;
+  } catch {
+    return DEFAULT_CURRENCIES_CONFIG;
   }
 }
 
 /**
- * Check if on league page and parse block rewards
+ * Update league data from global_settings WebSocket message
  */
-async function handleLeaguePage(): Promise<void> {
-  const isLeaguePage = window.location.pathname.includes('/game/league');
+async function updateLeagueDataFromGlobalSettings(settings: GlobalSettingsItem[]) {
+  try {
+    // Update wsPoolPowerData from global settings
+    for (const item of settings) {
+      wsPoolPowerData[item.currency] = item.pool_power_for_currency;
+    }
+    await chrome.storage.local.set({ [WS_POOL_POWER_KEY]: wsPoolPowerData });
 
-  if (!isLeaguePage) {
-    return;
+    // Helper to generate full update
+    await updateLeagueDataWithCurrentState(settings);
+  } catch (e) {
+    console.error('Rollercoin Calculator: Error updating league data from global settings', e);
   }
+}
 
-  console.log('Rollercoin Calculator: On league page, will parse block rewards...');
+/**
+ * Update league data from generic WebSocket updates (Power, Pool Power)
+ * Uses stored wsPoolPowerData and fallback settings if global_settings is missing
+ */
+async function updateLeagueDataFromWS() {
+  await updateLeagueDataWithCurrentState(null);
+}
 
-  // Wait a bit for page to fully render
-  await new Promise(resolve => setTimeout(resolve, 1500));
+/**
+ * Core function to rebuild LeagueData from current state
+ * @param settings Optional global settings if available (provides accurate block rewards)
+ */
+async function updateLeagueDataWithCurrentState(settings: GlobalSettingsItem[] | null) {
+  try {
+    // Get user power (value comes in Gh from WebSocket)
+    const userPowerResult = await chrome.storage.local.get(WS_USER_POWER_KEY);
+    const userPowerGh = userPowerResult[WS_USER_POWER_KEY] || wsUserPower || 0;
 
-  const blockRewards = await parseBlockRewardsFromLeaguePage();
+    // Get mining allocation from storage (contains percent per currency)
+    const allocationResult = await chrome.storage.local.get(['rollercoin_mining_allocation', 'rollercoin_mining_currency']);
+    const miningAllocation = allocationResult['rollercoin_mining_allocation'] as Array<{ currency: string; percent: number }> | null;
+    const activeMiningCurrency = allocationResult['rollercoin_mining_currency'] || null;
 
-  if (blockRewards && Object.keys(blockRewards).length > 0) {
-    await saveBlockRewardsToStorage(blockRewards);
+    // Get current balances
+    const existing = await getStoredLeagueData();
+    const userBalances = existing?.userBalances || {};
+
+    // Get currencies config
+    const currenciesConfig = await getCurrenciesConfig();
+
+    // Determine which currencies to use
+    // If we have settings, use them directly
+    // If not, use keys from wsPoolPowerData combined with CURRENCY_MAP
+    let currenciesToProcess: string[] = [];
+    if (settings) {
+      currenciesToProcess = settings.map(s => s.currency);
+    } else {
+      currenciesToProcess = Object.keys(CURRENCY_MAP);
+    }
+
+    // Build currencies list
+    const currencies: LeagueCurrencyData[] = currenciesToProcess
+      .filter(key => CURRENCY_MAP[key])
+      .map(key => {
+        const mapping = CURRENCY_MAP[key];
+
+        // Block payout: Use settings if available, otherwise fallback
+        let blockPayout = DEFAULT_BLOCK_REWARDS[mapping.displayName] || 0;
+
+        // Pool Power: Use WS data if available
+        let rawPoolPower = wsPoolPowerData[key] || 0;
+
+        if (settings) {
+          const settingItem = settings.find(s => s.currency === key);
+          if (settingItem) {
+            // Find currency config to get precision (to_small) and divider
+            const config = currenciesConfig.find(c => c.code === mapping.code);
+            const toSmall = config?.to_small || 1;
+            const divider = config?.divider || 1;
+
+            // Normalize block size (Raw -> Display Unit)
+            // block_size / divider / to_small = display unit
+            blockPayout = settingItem.block_size / divider / toSmall;
+            rawPoolPower = settingItem.pool_power_for_currency;
+          }
+        } else {
+          // If no settings, check existing data to prefer preserving known block payout
+          if (existing) {
+            const existingCurr = existing.currencies.find(c => c.code === mapping.code || c.currency === mapping.displayName);
+            if (existingCurr && existingCurr.block_payout > 0) {
+              blockPayout = existingCurr.block_payout;
+            }
+          }
+        }
+
+        // Pool power comes in Gh from WebSocket
+        const poolPowerGh = rawPoolPower;
+
+        // Calculate user power for this currency based on mining allocation
+        // miningAllocation uses keys like TRX_SMALL, SAT, etc. which match the WS keys
+        let currencyUserPower = 0;
+        if (miningAllocation) {
+          const allocation = miningAllocation.find(a => a.currency === key);
+          if (allocation && allocation.percent > 0) {
+            currencyUserPower = userPowerGh * (allocation.percent / 100);
+          }
+        } else if (activeMiningCurrency) {
+          // Fallback: if no allocation data, check if this is the active currency
+          const isActiveMining = (
+            mapping.displayName === activeMiningCurrency ||
+            mapping.code === activeMiningCurrency.toLowerCase() ||
+            key === activeMiningCurrency
+          );
+          currencyUserPower = isActiveMining ? userPowerGh : 0;
+        }
+
+        return {
+          currency: mapping.displayName,
+          code: mapping.code === 'matic' ? 'matic' : mapping.code,
+          total_block_power: poolPowerGh,
+          user_power: currencyUserPower,
+          block_payout: blockPayout,
+          block_created: '',
+          is_in_game_currency: ['RLT', 'RST', 'HMT'].includes(mapping.displayName),
+        };
+      })
+      .filter(c => c.total_block_power > 0); // Only include active pools
+
+    // If currencies result is empty (e.g. no pool power received yet), try to keep existing
+    if (currencies.length === 0 && existing && existing.currencies.length > 0) {
+      return;
+    }
+
+    const leagueData: LeagueData = {
+      currencies,
+      currenciesConfig,
+      userBalances,
+      user_max_power: userPowerGh,
+      maxPower: userPowerGh,
+      currentMiningCurrency: activeMiningCurrency || currencies[0]?.currency || 'BTC',
+      timestamp: Date.now(),
+    };
+
+    await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
+
+  } catch (e) {
+    console.error('Rollercoin Calculator: Error rebuilding league data', e);
   }
+}
+
+/**
+ * Update league data with balances from WebSocket
+ */
+async function updateLeagueDataWithBalances(wsBalances: Record<string, string>) {
+  try {
+    const leagueData = await getStoredLeagueData();
+    if (!leagueData) {
+      // If data doesn't exist, try to create it
+      await updateLeagueDataFromWS();
+      return;
+    }
+
+    const userBalances: Record<string, string> = {};
+    for (const [key, value] of Object.entries(wsBalances)) {
+      const mappedKey = BALANCE_KEY_MAP[key];
+      if (mappedKey) {
+        userBalances[mappedKey] = value;
+      }
+    }
+
+    leagueData.userBalances = userBalances;
+    await chrome.storage.local.set({ [LEAGUE_DATA_KEY]: leagueData });
+  } catch (e) {
+    console.error('Rollercoin Calculator: Error updating league data with balances', e);
+  }
+}
+
+/**
+ * Listen for WebSocket messages from the interceptor (via postMessage)
+ */
+function setupWebSocketListener() {
+  window.addEventListener('message', async (event) => {
+    if (event.source !== window) return;
+
+    // User power message
+    if (event.data?.type === 'ROLLERCOIN_WS_POWER') {
+      wsUserPower = event.data.data.total || 0;
+      await chrome.storage.local.set({ [WS_USER_POWER_KEY]: wsUserPower });
+      await updateLeagueDataFromWS();
+    }
+
+    // Pool power message (per currency)
+    if (event.data?.type === 'ROLLERCOIN_WS_POOL_POWER') {
+      const { currency, power } = event.data.data;
+      wsPoolPowerData[currency] = power;
+      await chrome.storage.local.set({ [WS_POOL_POWER_KEY]: wsPoolPowerData });
+      // Don't update on EVERY pool power message to avoid spamming writes, 
+      // but if we are missing data, we should. 
+      // Debouncing could be good here, but for now let's just update.
+      await updateLeagueDataFromWS();
+    }
+
+    // Balance message
+    if (event.data?.type === 'ROLLERCOIN_WS_BALANCE') {
+      const balances = event.data.data;
+      const formattedBalances: Record<string, string> = {};
+      for (const [key, value] of Object.entries(balances)) {
+        formattedBalances[key] = String(value);
+      }
+      await chrome.storage.local.set({ 'rollercoin_ws_balances': formattedBalances });
+      await updateLeagueDataWithBalances(formattedBalances);
+    }
+
+    // Global settings message
+    if (event.data?.type === 'ROLLERCOIN_WS_GLOBAL_SETTINGS') {
+      const settings = event.data.data as GlobalSettingsItem[];
+      await chrome.storage.local.set({ 'rollercoin_ws_global_settings': settings });
+      await updateLeagueDataFromGlobalSettings(settings);
+    }
+
+    // Currencies config from fetch interceptor
+    if (event.data?.type === 'ROLLERCOIN_CURRENCIES_CONFIG') {
+      const configs = event.data.data;
+      // Filter only minable currencies and format for our use
+      const mineableConfigs = configs
+        .filter((c: any) => c.is_can_be_mined)
+        .map((c: any) => ({
+          code: c.code,
+          name: c.name,
+          display_name: c.display_name,
+          min: c.min,
+          to_small: c.to_small,
+          precision: c.precision,
+          precision_to_balance: c.precision_to_balance,
+          is_can_be_mined: c.is_can_be_mined,
+          disabled_withdraw: c.disabled_withdraw,
+          is_in_game_currency: c.is_in_game_currency || false,
+          balance_key: c.balance_key,
+          divider: c.divider || 1,
+        }));
+
+      await chrome.storage.local.set({ [CURRENCIES_CONFIG_KEY]: mineableConfigs });
+
+      // Trigger league data update to use new config
+      await updateLeagueDataFromWS();
+    }
+
+    // User settings from fetch interceptor (contains mining allocation percent per currency)
+    if (event.data?.type === 'ROLLERCOIN_USER_SETTINGS') {
+      const settingsData = event.data.data as Array<{ currency: string; percent: number; is_default_currency: boolean }>;
+
+      // Store the mining allocation settings
+      await chrome.storage.local.set({ 'rollercoin_user_settings': settingsData });
+
+      // Find currencies with percent > 0 (active mining)
+      const activeMinings = settingsData.filter(s => s.percent > 0);
+
+      // Store active mining currencies and trigger league data update
+      if (activeMinings.length > 0) {
+        // Primary mining currency (highest percent or first one)
+        const primaryMining = activeMinings.reduce((a, b) => a.percent > b.percent ? a : b);
+
+        // Convert currency key to display name (TRX_SMALL -> TRX, SAT -> BTC, etc.)
+        const currencyMapping = CURRENCY_MAP[primaryMining.currency];
+        const displayName = currencyMapping?.displayName || primaryMining.currency;
+
+        await chrome.storage.local.set({
+          'rollercoin_mining_currency': displayName,
+          'rollercoin_mining_allocation': settingsData
+        });
+
+        // Update league data with correct mining allocation
+        await updateLeagueDataFromWS();
+      }
+    }
+  });
 }
 
 /**
  * Initialize content script
  */
-async function init() {
-  console.log('Rollercoin Calculator: Content script loaded on', window.location.pathname);
-
-  // Inject WebSocket interceptor and setup listener
-  injectWebSocketInterceptor();
+function init() {
+  // Setup listener for intercepted messages
   setupWebSocketListener();
-
-  // Check if on league page and parse block rewards
-  await handleLeaguePage();
-
-  // Check if on game page and save current mining coin's block reward
-  const isGamePage = window.location.pathname.includes('/game') && !window.location.pathname.includes('/game/league');
-  if (isGamePage) {
-    // Wait for game page to fully render, then save current mining block reward
-    setTimeout(async () => {
-      await saveCurrentMiningBlockReward();
-    }, 2500);
-  }
-
-  // Wait for page to be ready (game page might load dynamically)
-  setTimeout(async () => {
-    await fetchDataFromDOM();
-  }, 2000);
 
   // Message handler for popup requests
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    console.log('Rollercoin Calculator: Received message', message.type);
 
     if (message.type === 'GET_LEAGUE_DATA') {
-      // First check if we have pending data
-      if (pendingLeagueData) {
-        sendResponse({ success: true, data: pendingLeagueData });
-        return true;
-      }
-
-      // Try stored data
-      getStoredLeagueData().then(async stored => {
-        if (stored) {
-          sendResponse({ success: true, data: stored });
-        } else {
-          const domData = await fetchDataFromDOM();
-          sendResponse({ success: !!domData, data: domData });
-        }
+      getStoredLeagueData().then(stored => {
+        sendResponse({ success: !!stored, data: stored });
       });
       return true;
     }
 
+    // Allow forcing a fetch/update
     if (message.type === 'FETCH_LEAGUE_DATA') {
-      (async () => {
-        const domData = await fetchDataFromDOM();
-        sendResponse({ success: !!domData, data: domData });
-      })();
+      updateLeagueDataFromWS().then(() => {
+        getStoredLeagueData().then(stored => {
+          sendResponse({ success: !!stored, data: stored });
+        });
+      });
       return true;
     }
 
